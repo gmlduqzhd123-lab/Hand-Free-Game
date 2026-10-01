@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>4시 40분의 용사: 엽쌤스쿨</title>
+    <style>
+        /* =========================================
+           [1. 글로벌 설정 & UI 최적화]
+           ========================================= */
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; outline: none; }
+        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #0a0a0a; display: flex; justify-content: center; align-items: center; height: 100dvh; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+        
+        #game-app { width: 100%; max-width: 480px; height: 100%; background-color: #f1f2f6; display: flex; flex-direction: column; box-shadow: 0 0 50px rgba(0,0,0,1); position: relative; overflow: hidden; }
+        
+        .shake-light { animation: shake 0.2s cubic-bezier(.36,.07,.19,.97) both; }
+        .shake-hard { animation: shakeHard 0.4s cubic-bezier(.36,.07,.19,.97) both; filter: contrast(1.2); }
+        @keyframes shake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+        @keyframes shakeHard { 10% { transform: translate(-8px, -4px) scale(1.02); } 30% { transform: translate(6px, 6px) scale(0.98); } 50% { transform: translate(-6px, 4px) scale(1.01); } }
+
+        #toast { position: absolute; top: 12%; left: 50%; transform: translate(-50%, -20px) scale(0.9); background: rgba(0,0,0,0.85); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 12px 24px; border-radius: 30px; font-weight: 800; font-size: 0.95rem; pointer-events: none; opacity: 0; transition: all 0.3s ease; z-index: 9999; text-align: center; white-space: nowrap; box-shadow: 0 10px 20px rgba(0,0,0,0.5); backdrop-filter: blur(5px); }
+        #toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+        #header { flex: 0 0 16%; background: linear-gradient(135deg, #192a56, #273c75); display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 3px solid #0c142b; z-index: 20; position: relative; }
+        #clock { font-size: 2.5rem; font-weight: 900; color: #fbc531; margin-bottom: 6px; text-shadow: 2px 2px 0 #c23616, 0 0 15px rgba(251,197,49,0.5); letter-spacing: 1px; }
+        .hud-row { display: flex; gap: 6px; font-size: 0.95rem; font-weight: 900; width: 100%; justify-content: center; padding: 0 10px; }
+        .hud-badge { background: rgba(0,0,0,0.4); padding: 5px 10px; border-radius: 20px; display: flex; align-items: center; gap: 4px; border: 1px solid rgba(255,255,255,0.1); }
+        .res-gold { color: #fbc531; } .res-gem { color: #00a8ff; } .res-token { color: #4cd137; }
+        
+        #btn-sound { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 50%; width: 35px; height: 35px; font-size: 1rem; cursor: pointer; }
+
+        #battle-view { flex: 0 0 34%; background: radial-gradient(circle, #dcdde1 0%, #7f8fa6 100%); position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px solid #353b48; z-index: 10; cursor: crosshair; transition: background 0.5s; }
+        #battle-view.boss-mode { background: radial-gradient(circle, #ff7979 0%, #eb4d4b 100%); box-shadow: inset 0 0 50px rgba(194,54,22,0.8); }
+        #battle-view.night-mode { background: radial-gradient(circle, #273c75 0%, #0c142b 100%); }
+        #fx-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+
+        #boss-timer-wrap { position: absolute; top: 10px; width: 85%; height: 12px; background: rgba(0,0,0,0.6); border-radius: 6px; display: none; overflow: hidden; border: 1px solid #192a56; z-index: 8; }
+        #boss-timer-fill { width: 100%; height: 100%; background: #fbc531; transition: background-color 0.3s; }
+
+        #monster { width: 130px; height: 150px; background-color: #f5f6fa; border: 2px solid #bdc3c7; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-shadow: 5px 5px 0px #bdc3c7, 10px 10px 0px #95a5a6, 0 15px 20px rgba(0,0,0,0.3); position: relative; margin-top: 15px; z-index: 6; transition: transform 0.05s, filter 0.2s; }
+        #monster.hit { transform: scale(0.85) rotate(-3deg); filter: brightness(0.8) sepia(1) hue-rotate(-50deg) saturate(3); }
+        #monster.boss { border-color: #c23616; box-shadow: 0 0 30px rgba(232,65,24,0.8), 5px 5px 0px #c23616, 10px 10px 0px #8c7ae6; background: linear-gradient(135deg, #fff, #fbc531); }
+        
+        .monster-name { font-size: 1.05rem; font-weight: 900; color: #2f3640; text-align: center; margin-bottom: 12px; z-index: 2; pointer-events: none; line-height: 1.2; word-break: keep-all; padding: 0 5px; }
+        .hp-track { width: 85%; height: 14px; background-color: #2f3640; border-radius: 7px; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); z-index: 2; }
+        .hp-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #e84118, #c23616); transition: width 0.05s; }
+
+        #skill-dock { height: 60px; background: #2f3640; display: flex; justify-content: space-around; align-items: center; padding: 0 10px; border-bottom: 2px solid #192a56; z-index: 15; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .skill-btn { flex: 1; margin: 0 6px; height: 46px; border-radius: 8px; border: none; color: #fff; position: relative; overflow: hidden; cursor: pointer; box-shadow: 0 4px 0 #192a56; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: transform 0.1s; }
+        .skill-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: none; }
+        .skill-btn:disabled { background: #718093 !important; box-shadow: 0 4px 0 #353b48 !important; opacity: 0.7; }
+        .skill-cd-mask { position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(0,0,0,0.6); height: 0%; transition: height 0.1s linear; }
+        
+        #btn-s1 { background: linear-gradient(135deg, #fbc531, #e1b12c); text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
+        #btn-s2 { background: linear-gradient(135deg, #9c88ff, #8c7ae6); text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
+        .s-title { font-weight: 900; font-size: 0.9rem; z-index: 2; } .s-sub { font-size: 0.65rem; z-index: 2; }
+
+        #panel-area { flex: 1; background-color: #f1f2f6; display: flex; flex-direction: column; overflow: hidden; }
+        #tab-nav { display: flex; height: 45px; background-color: #dcdde1; flex-shrink: 0; }
+        .tab-btn { flex: 1; border: none; background: transparent; font-size: 0.95rem; font-weight: 900; color: #7f8fa6; border-bottom: 4px solid transparent; transition: all 0.2s; position: relative; cursor: pointer; }
+        .tab-btn.active { color: #273c75; background-color: #f1f2f6; border-bottom: 4px solid #273c75; }
+        
+        .noti-dot { position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; background: #e84118; border-radius: 50%; display: none; }
+        .noti-dot.show { display: block; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(232,65,24,0.7); } 70% { transform: scale(1.5); box-shadow: 0 0 0 4px rgba(232,65,24,0); } 100% { transform: scale(1); } }
+
+        .tab-view { flex: 1; padding: 10px; overflow-y: auto; display: none; padding-bottom: 30px; animation: slideUp 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .tab-view.active { display: block; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .up-card { background: #fff; border: 1px solid #dcdde1; border-radius: 10px; padding: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,0.03); position: relative; overflow: hidden; }
+        .milestone-bar { position: absolute; bottom: 0; left: 0; height: 4px; background: #fbc531; width: 0%; transition: width 0.3s ease; }
+        
+        .up-info { flex: 1; display: flex; flex-direction: column; gap: 4px; padding-right: 10px; z-index: 2; }
+        .up-title { font-size: 1.05rem; font-weight: 900; color: #2f3640; display: flex; align-items: center; gap: 5px; }
+        .up-desc { font-size: 0.75rem; color: #718093; word-break: keep-all; }
+        .up-stat { font-size: 0.8rem; font-weight: 800; color: #273c75; background: #f1f2f6; padding: 3px 6px; border-radius: 4px; display: inline-block; align-self: flex-start; margin-top: 2px; }
+        
+        .up-btn { background: linear-gradient(180deg, #487eb0, #273c75); color: white; border: none; padding: 10px 0; width: 85px; border-radius: 8px; font-weight: 900; font-size: 0.9rem; box-shadow: 0 4px 0 #192a56; flex-shrink: 0; transition: transform 0.1s; z-index: 2; cursor: pointer;}
+        .up-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: none; }
+        .up-btn:disabled { background: #b2bec3; box-shadow: 0 4px 0 #636e72; opacity: 0.5; cursor: not-allowed; }
+
+        .gacha-banner { background: linear-gradient(135deg, #192a56, #273c75); padding: 15px; border-radius: 10px; text-align: center; color: white; margin-bottom: 12px; border: 2px solid #fbc531; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        
+        .relic-item { background: #fff; border: 2px solid #bdc3c7; border-radius: 8px; padding: 10px 5px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; filter: grayscale(100%); opacity: 0.6; transition: all 0.3s; }
+        .relic-item.unlocked { filter: grayscale(0%); opacity: 1; border-color: #fbc531; background: #fffdf0; box-shadow: 0 4px 10px rgba(251, 197, 49, 0.2); }
+        .relic-icon { font-size: 2rem; margin-bottom: 4px; } .relic-name { font-size: 0.8rem; font-weight: 900; color: #2f3640; line-height: 1.2; } .relic-eff { font-size: 0.7rem; color: #e84118; font-weight: 900; margin-top: 4px; }
+
+        .achieve-item { background: #fff; border: 1px solid #dcdde1; border-radius: 8px; padding: 10px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .achieve-item.done { background: #f1f2f6; opacity: 0.7; }
+        .ach-info { display: flex; flex-direction: column; gap: 3px; } .ach-title { font-weight: 900; font-size: 0.9rem; color: #2f3640; } .ach-desc { font-size: 0.75rem; color: #718093; }
+        .btn-claim { background: #fbc531; color: #2f3640; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 900; cursor: pointer; box-shadow: 0 3px 0 #e1b12c; }
+        .btn-claim:active:not(:disabled) { transform: translateY(3px); box-shadow: none; }
+        .btn-claim:disabled { background: #dcdde1; box-shadow: none; color: #a4b0be; cursor: not-allowed; }
+
+        .setting-panel { background: #fff; border: 1px solid #dcdde1; padding: 15px; border-radius: 10px; margin-bottom: 12px; }
+        .btn-half { flex: 1; padding: 10px 0; border-radius: 6px; border: none; font-weight: 900; color: #fff; font-size: 0.95rem; transition: transform 0.1s; cursor: pointer;}
+        .btn-half:active { transform: translateY(4px); box-shadow: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="game-app">
+    <div id="toast"></div>
+
+    <header id="header">
+        <button id="btn-sound" onclick="Sys.toggleSound()">🔊</button>
+        <div id="clock">🕒 16:00</div>
+        <div class="hud-row">
+            <span class="hud-badge res-gold">💰 <span id="hud-gold">0</span></span>
+            <span class="hud-badge res-gem">💎 <span id="hud-gem">0</span></span>
+            <span class="hud-badge res-token">🏅 <span id="hud-token">0</span></span>
+        </div>
+    </header>
+
+    <main id="battle-view">
+        <canvas id="fx-canvas"></canvas>
+        <div id="boss-timer-wrap"><div id="boss-timer-fill"></div></div>
+        <div id="monster">
+            <div class="monster-name" id="mob-name">나이스 결재</div>
+            <div class="hp-track"><div class="hp-fill" id="mob-hp"></div></div>
+        </div>
+    </main>
+
+    <div id="skill-dock">
+        <button class="skill-btn" id="btn-s1" onclick="Combat.useSkill('rush')">
+            <span class="s-title">🏃 랜덤 조퇴 사유</span><span class="s-sub">(5초 광란의 자동클릭)</span>
+            <div class="skill-cd-mask" id="cd-rush"></div>
+        </button>
+        <button class="skill-btn" id="btn-s2" onclick="Combat.useSkill('night')">
+            <span class="s-title">🌙 밤편지 노동요</span><span class="s-sub">(10초 크리티컬 100%)</span>
+            <div class="skill-cd-mask" id="cd-night"></div>
+        </button>
+    </div>
+
+    <footer id="panel-area">
+        <nav id="tab-nav">
+            <button class="tab-btn active" data-target="tab-stat">스펙업</button>
+            <button class="tab-btn" data-target="tab-comp">동료</button>
+            <button class="tab-btn" data-target="tab-relic">교보재</button>
+            <button class="tab-btn" data-target="tab-ach">업적<div class="noti-dot" id="noti-ach"></div></button>
+            <button class="tab-btn" data-target="tab-sys">설정</button>
+        </nav>
+
+        <div id="tab-stat" class="tab-view active">
+            <div class="up-card">
+                <div class="milestone-bar" id="mile-click"></div>
+                <div class="up-info">
+                    <div class="up-title">⌨️ 캔버스 타건력</div>
+                    <div class="up-desc">Lv 10, 25, 50 달성 시 딜량 2배 증폭!</div>
+                    <div class="up-stat">Lv.<span id="lv-click">1</span> | 딜량: <span id="val-click">10</span></div>
+                </div>
+                <button class="up-btn" id="up-click">💰 <span id="cost-click">50</span></button>
+            </div>
+            <div class="up-card">
+                <div class="milestone-bar" id="mile-auto"></div>
+                <div class="up-info">
+                    <div class="up-title">🧠 자동 파쇄기</div>
+                    <div class="up-desc">Lv 10, 25, 50 달성 시 효율 2배 증폭!</div>
+                    <div class="up-stat">Lv.<span id="lv-auto">0</span> | 초당 딜: <span id="val-auto">0</span></div>
+                </div>
+                <button class="up-btn" id="up-auto">💰 <span id="cost-auto">100</span></button>
+            </div>
+            <div class="up-card">
+                <div class="up-info">
+                    <div class="up-title">💥 크리티컬 결재</div>
+                    <div class="up-desc">확률적으로 대미지가 3배 증가합니다. (최대 50%)</div>
+                    <div class="up-stat">Lv.<span id="lv-crit">0</span> | 확률: <span id="val-crit">0</span>%</div>
+                </div>
+                <button class="up-btn" id="up-crit">💰 <span id="cost-crit">300</span></button>
+            </div>
+        </div>
+
+        <div id="tab-comp" class="tab-view">
+            <div class="up-card">
+                <div class="up-info">
+                    <div class="up-title">🏊‍♂️ 나명심 코치님</div>
+                    <div class="up-desc">압도적 피지컬로 방치 딜(자동 딜)을 책임집니다.</div>
+                    <div class="up-stat">방치 보너스: +<span id="val-comp1">0</span></div>
+                </div>
+                <button class="up-btn" id="up-comp1" style="background: linear-gradient(180deg, #9b59b6, #8e44ad); box-shadow: 0 4px 0 #5e3370;">💰 <span id="cost-comp1">2K</span></button>
+            </div>
+            <div class="up-card">
+                <div class="up-info">
+                    <div class="up-title">✨ 유미혜 선생님</div>
+                    <div class="up-desc">"엽아 힘내!" 따뜻한 격려로 모든 클릭 딜을 %단위로 증폭시킵니다.</div>
+                    <div class="up-stat">클릭 증폭: +<span id="val-comp2">0</span>%</div>
+                </div>
+                <button class="up-btn" id="up-comp2" style="background: linear-gradient(180deg, #e84393, #d63031); box-shadow: 0 4px 0 #b33939;">💰 <span id="cost-comp2">5K</span></button>
+            </div>
+        </div>
+
+        <div id="tab-relic" class="tab-view">
+            <div class="gacha-banner">
+                <h3 style="font-weight:900; font-size:1.1rem; margin-bottom:5px;">🎁 특급 교보재 지원 (가챠)</h3>
+                <p style="font-size:0.75rem; color:#dcdde1; margin-bottom:10px;">초과근무수당(💎)으로 영구 버프 장비를 획득하세요.</p>
+                <button class="up-btn" id="btn-gacha" style="width:140px; background:#fbc531; color:#2f3640; box-shadow:0 4px 0 #e1b12c; font-size:1rem;" onclick="Logic.pullGacha()">💎 10 가챠</button>
+            </div>
+            <div class="grid-2col">
+                <div class="relic-item" id="relic-0"><div class="relic-icon">⏱️</div><div class="relic-name">나명심 코치<br>전동 초시계</div><div class="relic-eff">자동 딜 x1.5배</div></div>
+                <div class="relic-item" id="relic-1"><div class="relic-icon">💌</div><div class="relic-name">유미혜 쌤<br>응원 포스트잇</div><div class="relic-eff">크리 딜 5배로</div></div>
+                <div class="relic-item" id="relic-2"><div class="relic-icon">⌨️</div><div class="relic-name">엽쌤스쿨<br>기계식 키보드</div><div class="relic-eff">클릭 딜 x1.5배</div></div>
+                <div class="relic-item" id="relic-3"><div class="relic-icon">💿</div><div class="relic-name">아카펠라<br>교본 1장</div><div class="relic-eff">보스타임 +10초</div></div>
+            </div>
+        </div>
+
+        <div id="tab-ach" class="tab-view">
+            <div id="ach-list"></div>
+        </div>
+
+        <div id="tab-sys" class="tab-view">
+            <div class="setting-panel" style="background: linear-gradient(135deg, #fff, #fff1f0); border-color:#ff7979;">
+                <div class="setting-header" style="color:#e84118; border-bottom:none; margin-bottom:0;">🏃 내일 출근하기 (환생)</div>
+                <p style="font-size:0.8rem; color:#2f3640; line-height:1.4; margin-bottom:10px;">스테이지와 골드가 초기화되며, 도달 시간에 비례하여 영구 버프인 <strong>연수학점(🏅)</strong>을 정산받습니다. (학점당 전체 딜 10% 증가)</p>
+                <div style="font-weight:900; font-size:1.1rem; color:#4cd137; text-align:center; background:#fff; padding:8px; border-radius:6px; border:1px solid #dcdde1; margin-bottom:10px;">
+                    퇴근 시 획득: 🏅 <span id="preview-token">0</span>
+                </div>
+                <button class="btn-half" style="width:100%; background:#e84118; box-shadow:0 4px 0 #c23616;" onclick="Logic.prestige()">퇴근 (초기화 및 버프 획득)</button>
+            </div>
+            <div class="setting-panel">
+                <div class="setting-header" style="border-bottom:none; margin-bottom:5px;">💾 세이브 백업 (Base64)</div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-half" style="background:#2ecc71; box-shadow:0 4px 0 #27ae60;" onclick="Sys.export()">코드 복사</button>
+                    <button class="btn-half" style="background:#e67e22; box-shadow:0 4px 0 #d35400;" onclick="Sys.import()">데이터 입력</button>
+                </div>
+                <button class="btn-half" style="width:100%; background:#718093; box-shadow:0 4px 0 #353b48; margin-top:10px;" onclick="Sys.hardReset()">전체 데이터 완전 삭제</button>
+            </div>
+        </div>
+    </footer>
+</div>
+
+<script>
+/* ================== [ Utils & Formatter ] ================== */
+const $ = id => document.getElementById(id);
+// [버그 수정 1] 숫자 오버플로우 방지 (극 단위까지 확장)
+const fNum = n => {
+    if(n < 1000) return Math.floor(n).toLocaleString('ko-KR');
+    const u = ["","만","억","조","경","해","자","양","구","간","정","재","극"]; 
+    let i = 0, num = n;
+    while(num>=10000 && i<u.length-1){ num/=10000; i++; }
+    return num.toFixed(2).replace(/\.00$/,'') + u[i];
+};
+
+/* ================== [ System & Audio ] ================== */
+const Sys = {
+    sound: true, ctx: null, tmr: null,
+    init() { if(!this.ctx) { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); if(this.ctx.state==='suspended') this.ctx.resume(); } },
+    toggleSound() { this.sound = !this.sound; $('btn-sound').innerText = this.sound ? "🔊" : "🔇"; if(this.sound) this.init(); },
+    play(f, t, d, v=0.05) {
+        if(!this.sound || !this.ctx) return;
+        const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+        o.type=t; o.frequency.value=f; g.gain.setValueAtTime(v, this.ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime+d);
+        o.connect(g); g.connect(this.ctx.destination); o.start(); o.stop(this.ctx.currentTime+d);
+    },
+    sfx: {
+        hit: ()=>Sys.play(150,'square',0.1,0.03), crit: ()=>Sys.play(300,'sawtooth',0.15,0.05),
+        coin: ()=>{Sys.play(800,'sine',0.1,0.02); setTimeout(()=>Sys.play(1200,'sine',0.15,0.02),80);},
+        err: ()=>Sys.play(100,'triangle',0.3,0.1), btn: ()=>Sys.play(500,'sine',0.05,0.02),
+        gacha: ()=>{Sys.play(400,'square',0.1,0.05);setTimeout(()=>Sys.play(600,'square',0.2,0.05),150);},
+        ach: ()=>{Sys.play(500,'sine',0.1,0.05);setTimeout(()=>Sys.play(800,'sine',0.2,0.05),100);setTimeout(()=>Sys.play(1000,'sine',0.3,0.05),200);}
+    },
+    toast(msg) {
+        const t = $('toast'); t.innerHTML = msg; t.classList.add('show');
+        clearTimeout(this.tmr); this.tmr = setTimeout(() => t.classList.remove('show'), 2000);
+    },
+    shake(type='light') {
+        const c = $('game-app'); c.classList.remove('shake-light', 'shake-hard');
+        void c.offsetWidth; c.classList.add(`shake-${type}`);
+    },
+    export() { navigator.clipboard.writeText(btoa(encodeURIComponent(JSON.stringify(Data.state)))).then(()=>Sys.toast("✅ 세이브 코드가 복사되었습니다.")); },
+    import() { 
+        const d = prompt("코드를 붙여넣으세요:"); 
+        if(d){ 
+            try { 
+                const decoded = JSON.parse(decodeURIComponent(atob(d))); 
+                if(decoded && decoded.stat) { Data.state = decoded; Data.save(); location.reload(); } else { alert("유효하지 않은 코드입니다."); }
+            }catch(e){alert("잘못된 데이터 형식입니다.");} 
+        } 
+    },
+    hardReset() {
+        if(confirm("정말 모든 데이터를 완전히 삭제하시겠습니까? (복구 불가)")) {
+            localStorage.removeItem(Data.key); location.reload();
+        }
+    }
+};
+
+// 모바일 터치(더블탭 확대, 스크롤) 오작동 완벽 방어
+document.addEventListener('touchstart', (e)=>{if(e.touches.length>1) e.preventDefault();}, {passive:false});
+document.addEventListener('touchmove', (e)=>{if(e.target.id === 'battle-view' || e.target.id === 'monster') e.preventDefault();}, {passive:false});
+document.body.addEventListener('pointerdown', ()=>Sys.init(), {once:true});
+
+/* ================== [ Data & State ] ================== */
+const Data = {
+    key: 'ys_bugfree_final_v2',
+    def: {
+        min: 0, gold: 0, gem: 0, token: 0, kills: 0, totalClicks: 0,
+        mob: { hp: 100, boss: false }, 
+        stat: { c: {l:1, p:10, c:50}, a: {l:0, p:0, c:100}, crit: {l:0, p:0, c:300} },
+        comp: { na: {l:0, p:0, c:2000}, yu: {l:0, p:0, c:5000} },
+        relic: [false,false,false,false], ach: [false,false,false,false,false],
+        skill: { r: 0, n: 0 }, lastDt: Date.now()
+    },
+    state: {},
+    load() { 
+        let s = JSON.parse(localStorage.getItem(this.key)); 
+        this.state = s ? {...this.def, ...s, stat: s.stat||this.def.stat, comp: s.comp||this.def.comp, ach: s.ach||this.def.ach, relic: s.relic||this.def.relic} : JSON.parse(JSON.stringify(this.def)); 
+        
+        // [버그 수정 2] 로드 시 보스전 도망치기(Exploit) 방어 및 처리
+        if (this.state.mob.boss) {
+            this.state.min = Math.max(0, this.state.min - 1);
+            this.state.kills = Math.max(0, this.state.kills - 1);
+            this.state.mob.boss = false;
+        }
+    },
+    save() { this.state.lastDt = Date.now(); localStorage.setItem(this.key, JSON.stringify(this.state)); }
+};
+Data.load();
+
+/* ================== [ Achievements System ] ================== */
+const Ach = {
+    list: [
+        { id: 0, title: "첫 결재", desc: "공문 10개 파쇄", goal: ()=>Data.state.kills>=10, rwd: 5 },
+        { id: 1, title: "퇴근 예행 연습", desc: "16:10 보스 처치", goal: ()=>Data.state.kills>=100, rwd: 20 },
+        { id: 2, title: "광란의 손가락", desc: "화면 500회 터치", goal: ()=>Data.state.totalClicks>=500, rwd: 15 },
+        { id: 3, title: "부장님의 인정", desc: "골드 100만 달성", goal: ()=>Data.state.gold>=1000000, rwd: 30 },
+        { id: 4, title: "마스터 엽쌤", desc: "타건력 Lv 50 달성", goal: ()=>Data.state.stat.c.l>=50, rwd: 50 }
+    ],
+    check() {
+        let noti = false;
+        this.list.forEach((a, i) => { if(!Data.state.ach[i] && a.goal()) noti = true; });
+        if(noti) $('noti-ach').classList.add('show'); else$('noti-ach').classList.remove('show');
+    },
+    claim(id) {
+        if(Data.state.ach[id] || !this.list[id].goal()) return;
+        Data.state.ach[id] = true; Data.state.gem += this.list[id].rwd;
+        Sys.sfx.ach(); Sys.toast(`🏆 업적 달성! 💎 ${this.list[id].rwd} 획득`);
+        this.check(); UI.renderAch(); UI.renderRes(); Data.save();
+    }
+};
+
+/* ================== [ Canvas VFX Engine ] ================== */
+const VFX = {
+    cvs: $('fx-canvas'), ctx: null, ptc: [],
+    init() { this.ctx = this.cvs.getContext('2d'); window.addEventListener('resize', ()=>this.resize()); this.resize(); },
+    resize() { this.cvs.width = this.cvs.offsetWidth; this.cvs.height = this.cvs.offsetHeight; },
+    add(txt, x, y, type) {
+        const isGold = type==='gold'; const isCrit = type==='crit';
+        const c = isCrit?'#e84118':type==='auto'?'#00a8ff':isGold?'#4cd137':'#fbc531';
+        this.ptc.push({ t:txt, x:x+(Math.random()-0.5)*30, y:y, c:c, s:isCrit?40:isGold?25:20, a:1, vx: (Math.random()-0.5)*4, vy: isGold ? -2 : (isCrit?-6:-4), g: 0.2, life: 1 });
+    },
+    update(dt) {
+        this.ctx.clearRect(0,0,this.cvs.width,this.cvs.height);
+        this.ctx.textAlign = 'center'; this.ctx.textBaseline = 'middle';
+        const fpsRatio = dt / (1000/60); 
+        for(let i=this.ptc.length-1; i>=0; i--) {
+            let p = this.ptc[i];
+            p.vy += p.g * fpsRatio; p.y += p.vy; p.x += p.vx; p.life -= 0.015 * fpsRatio; p.a = Math.max(0, p.life);
+            if(p.life <= 0) { this.ptc.splice(i,1); continue; }
+            this.ctx.font = `900 ${p.s}px Pretendard`;
+            this.ctx.fillStyle = `rgba(0,0,0,${p.a})`; this.ctx.fillText(p.t, p.x+2, p.y+2); 
+            this.ctx.fillStyle = p.c; this.ctx.globalAlpha = p.a; this.ctx.fillText(p.t, p.x, p.y);
+            this.ctx.globalAlpha = 1;
+        }
+    }
+};
+VFX.init();
+
+/* ================== [ Logic & Combat ] ================== */
+const Logic = {
+    names: ["나이스 결재", "협조전 처리", "학급 일지", "체온 측정표", "조퇴 사유서"],
+    bosses: ["6학년 PAPS 측정", "수영부 예산 품의", "보성-강진 연수", "200명 참관 공개수업", "종합 세트 AI 보고서"],
+    bossTime: 0, bossMax: 0, isNight: false, bossActive: false,
+    curMaxHp: 100, curRwd: 15,
+
+    calcMobStats() {
+        let hp = 100 * Math.pow(1.15, Data.state.kills);
+        let rwd = 15 * Math.pow(1.12, Data.state.kills);
+        if(Data.state.mob.boss) { hp *= 6; rwd *= 5; }
+        // NaN 방지
+        this.curMaxHp = isNaN(hp) ? 100 : Math.floor(hp); 
+        this.curRwd = isNaN(rwd) ? 15 : Math.floor(rwd);
+    },
+
+    getMul: () => 1 + (Data.state.token * 0.1),
+    getMileMul(lv) { return lv >= 100 ? 16 : lv >= 50 ? 8 : lv >= 25 ? 4 : lv >= 10 ? 2 : 1; },
+    getC_Dmg() { return Math.floor((Data.state.stat.c.p * this.getMileMul(Data.state.stat.c.l)) * (Data.state.relic[2]?1.5:1) * (1+Data.state.comp.yu.p/100) * this.getMul()); },
+    getA_Dmg() { return Math.floor((Data.state.stat.a.p * this.getMileMul(Data.state.stat.a.l) + Data.state.comp.na.p) * (Data.state.relic[0]?1.5:1) * this.getMul()); },
+
+    spawn(forceBoss=null) {
+        if(forceBoss===null && Data.state.kills>0 && Data.state.kills%10===0) { Data.state.min++; if(Data.state.min===40) Sys.toast("🎉 16:40 달성! 칼퇴 확정!"); }
+        const isB = forceBoss!==null ? forceBoss : (Data.state.kills>0 && Data.state.kills%100===0);
+        
+        Data.state.mob.boss = isB;
+        this.bossActive = isB;
+        this.calcMobStats();
+
+        if(isB) {
+            // [버그 수정 4] 인덱스 -1 참조 방지
+            const bIdx = Math.min(Math.max(0, Math.floor(Data.state.kills/100)-1), 4);
+            $('mob-name').innerText = this.bosses[bIdx];
+            Sys.shake('hard'); this.bossMax = Data.state.relic[3] ? 40 : 30; this.bossTime = this.bossMax;
+        } else {
+            $('mob-name').innerText = this.names[Math.floor(Math.random()*this.names.length)];
+        }
+        Data.state.mob.hp = this.curMaxHp; UI.renderAll(); Ach.check();
+    },
+
+    hit(dmg, x, y, isAuto=false) {
+        let isC = false; const cP = this.isNight ? 100 : Data.state.stat.crit.p;
+        if(!isAuto && cP>0 && Math.random()*100<cP) { dmg *= (Data.state.relic[1]?5:3); isC = true; }
+        
+        Data.state.mob.hp -= dmg;
+        const m = $('monster'); m.classList.remove('hit'); void m.offsetWidth; m.classList.add('hit');
+        if(isC) { Sys.sfx.crit(); Sys.shake('light'); } else if(!isAuto) { Sys.sfx.hit(); }
+        if(x) VFX.add((isC?'💥':'-')+fNum(dmg), x, y, isAuto?'auto':(isC?'crit':'normal'));
+
+        if(Data.state.mob.hp<=0) {
+            Data.state.gold += this.curRwd; Data.state.kills++; Sys.sfx.coin();
+            const r = m.getBoundingClientRect(); VFX.add('+💰'+fNum(this.curRwd), r.left+r.width/2, r.top+r.height/2-20, 'gold');
+            if(Data.state.mob.boss) {
+                this.bossActive = false; const g = 2+Math.floor(Data.state.kills/100); Data.state.gem+=g;
+                setTimeout(()=>Sys.toast(`🎉 보스 격파! 💎${g} 획득`), 300);
+            }
+            this.spawn(null);
+        } else { UI.renderHp(); }
+        UI.renderRes();
+    },
+
+    up(type, cur, cost, gr, form) { if(Data.state.gold >= cost) { Sys.sfx.btn(); Data.state.gold -= cost; cur.l++; cur.c = Math.floor(cur.c*gr); form(cur); UI.renderAll(); Ach.check(); } },
+
+    pullGacha() {
+        if(Data.state.gem < 10) return; Sys.sfx.gacha(); Data.state.gem -= 10;
+        const u = []; Data.state.relic.forEach((h,i)=>{if(!h)u.push(i);});
+        if(u.length===0) { Sys.toast("모든 교보재를 모았습니다! (💎반환)"); Data.state.gem+=10; UI.renderRes(); return; }
+        Data.state.relic[u[Math.floor(Math.random()*u.length)]] = true;
+        Sys.shake('hard'); Sys.toast("🎁 특급 교보재 지원 완료!"); UI.renderAll(); Data.save();
+    },
+
+    prestige() {
+        if(Data.state.min<=0) { Sys.toast("업무를 더 진행하고 퇴근하세요."); return; }
+        if(confirm(`초기화 후 내일 출근합니다.\n연수학점 🏅${fNum(Data.state.min)} 획득!`)) {
+            const m = Data.state.min; const s = Data.state;
+            Data.state = JSON.parse(JSON.stringify(Data.def));
+            // [버그 수정 3] 환생 시 클릭 횟수 및 업적 인계
+            Data.state.token = s.token+m; 
+            Data.state.gem = s.gem; 
+            Data.state.relic = s.relic; 
+            Data.state.ach = s.ach;
+            Data.state.totalClicks = s.totalClicks;
+            
+            Data.save(); location.reload();
+        }
+    }
+};
+
+/* ================== [ Combat & Skills ] ================== */
+const Combat = {
+    sk: { r:{cd:60,d:5}, n:{cd:90,d:10} },
+    useSkill(t) {
+        const n = Date.now(), c = this.sk[t].cd*1000; if(n - Data.state.skill[t] < c) return;
+        Data.state.skill[t] = n; Sys.sfx.gacha();
+        if(t==='rush') {
+            Sys.toast("🏃 랜덤 조퇴 사유 발동!"); $('monster').style.transform='scale(0.9)';
+            const i = setInterval(()=>Logic.hit(Logic.getC_Dmg(), VFX.cvs.width/2, VFX.cvs.height/2, false), 80);
+            setTimeout(()=>{clearInterval(i); $('monster').style.transform='';}, this.sk[t].d*1000);
+        } else {
+            Logic.isNight = true; $('battle-view').classList.add('night-mode'); Sys.toast("🌙 밤편지 노동요! (크리 100%)");
+            setTimeout(()=>{Logic.isNight=false; $('battle-view').classList.remove('night-mode');}, this.sk[t].d*1000);
+        }
+    }
+};
+
+/* ================== [ UI Update ] ================== */
+const UI = {
+    renderRes() {
+        let h = 16+Math.floor(Data.state.min/60), m = Data.state.min%60;
+        $('clock').innerText = `🕒 ${h}:${m.toString().padStart(2,'0')}`;
+        $('hud-gold').innerText = fNum(Data.state.gold); $('hud-gem').innerText = fNum(Data.state.gem);$('hud-token').innerText = fNum(Data.state.token);
+        $('preview-token').innerText = fNum(Data.state.min);$('btn-gacha').disabled = Data.state.gem<10;
+        
+        const st = Data.state.stat, cp = Data.state.comp;
+        const upB = (id, o, v) => { $(`lv-${id}`).innerText=o.l; $(`val-${id}`).innerText=v; $(`cost-${id}`).innerText=fNum(o.c); $(`up-${id}`).disabled = Data.state.gold < o.c; }
+        upB('click', st.c, fNum(Logic.getC_Dmg())); upB('auto', st.a, fNum(Logic.getA_Dmg())); upB('crit', st.crit, st.crit.p);
+        upB('comp1', cp.na, fNum(cp.na.p)); upB('comp2', cp.yu, cp.yu.p);
+
+        const getPct = lv => { const t = lv>=100?100 : lv>=50?100 : lv>=25?50 : lv>=10?25 : 10; const p = lv>=50?50 : lv>=25?25 : lv>=10?10 : 0; return ((lv-p)/(t-p))*100; };
+        $('mile-click').style.width = `${getPct(st.c.l)}%`; $('mile-auto').style.width = `${getPct(st.a.l)}%`;
+    },
+    renderHp() {
+        $('mob-hp').style.width = `${Math.max(0, (Data.state.mob.hp/Logic.curMaxHp)*100)}%`;
+        if(Data.state.mob.boss) { $('battle-view').classList.add('boss-mode'); $('monster').classList.add('boss');$('boss-timer-wrap').style.display='block'; }
+        else { $('battle-view').classList.remove('boss-mode'); $('monster').classList.remove('boss');$('boss-timer-wrap').style.display='none'; }
+    },
+    renderAch() {
+        const list = $('ach-list'); list.innerHTML = '';
+        Ach.list.forEach(a => {
+            const done = Data.state.ach[a.id]; const can = a.goal();
+            list.innerHTML += `<div class="achieve-item ${done?'done':''}"><div class="ach-info"><div class="ach-title">${a.title}</div><div class="ach-desc">${a.desc}</div></div><button class="btn-claim" ${done||!can?'disabled':''} onclick="Ach.claim(${a.id})">${done?'완료':`💎 ${a.rwd}`}</button></div>`;
+        });
+    },
+    renderAll() { this.renderRes(); this.renderHp(); this.renderAch(); Data.state.relic.forEach((h,i)=>{if(h)$(`relic-${i}`).classList.add('unlocked');}); }
+};
+
+/* ================== [ Game Loop & Offline Progress ] ================== */
+let lastTime = performance.now();
+let autoTimer = 0;
+
+function gameLoop(now) {
+    let dt = now - lastTime; lastTime = now;
+    // [버그 수정 5] 탭 전환 시 DeltaTime 캡핑을 통한 물리엔진 폭주 방어
+    if(dt > 100) dt = 16; 
+    
+    VFX.update(dt);
+    
+    if (Logic.bossActive) {
+        Logic.bossTime -= (dt/1000);
+        const pct = (Logic.bossTime/Logic.bossMax)*100;
+        $('boss-timer-fill').style.width = `${pct}%`;
+        $('boss-timer-fill').style.backgroundColor = pct<30 ? '#e84118' : '#fbc531';
+        
+        if(Logic.bossTime <= 0) {
+            Sys.sfx.err(); Sys.shake('hard'); Sys.toast("❌ 기한 만료! 서류 반려됨.");
+            Data.state.min = Math.max(0, Data.state.min-1); Data.state.kills--; Logic.spawn(false);
+        }
+    }
+
+    autoTimer += dt;
+    if (autoTimer >= 1000) {
+        autoTimer -= 1000;
+        const a = Logic.getA_Dmg(); if(a>0) Logic.hit(a, VFX.cvs.width/2, VFX.cvs.height/2+30, true);
+    }
+
+    const timeNow = Date.now();
+    ['rush','night'].forEach(t => {
+        const c = Combat.sk[t].cd*1000, p = timeNow - Data.state.skill[t];
+        const btn = $(`btn-s${t==='rush'?1:2}`), mask = $(`cd-${t}`);
+        if(p<c) { btn.disabled=true; mask.style.height=`${100-(p/c)*100}%`; } else { btn.disabled=false; mask.style.height='0%'; }
+    });
+
+    requestAnimationFrame(gameLoop);
+}
+
+function calcOfflineProgress() {
+    const now = Date.now();
+    const offSecs = Math.floor((now - Data.state.lastDt)/1000);
+    const dps = Logic.getA_Dmg();
+    
+    if (offSecs > 60 && dps > 0) {
+        const validSecs = Math.min(offSecs, 86400); // 최대 24시간
+        const timeToKill = Logic.curMaxHp / dps;
+        const gPerSec = Logic.curRwd / timeToKill;
+        const earned = Math.floor(validSecs * gPerSec * 0.7); // 30% 페널티
+        
+        if (earned > 0) { 
+            Data.state.gold += earned; 
+            setTimeout(()=>Sys.toast(`⏰ 자리 비움 결재 완료!<br>수익: 💰${fNum(earned)}`), 800); 
+            UI.renderRes();
+        }
+    }
+    Data.state.lastDt = now;
+    lastTime = performance.now(); // 델타 타임 초기화
+}
+
+// 브라우저 탭 복귀 감지
+document.addEventListener('visibilitychange', () => { if(!document.hidden) calcOfflineProgress(); });
+
+/* ================== [ Init & Event Listeners ] ================== */
+$('battle-view').addEventListener('pointerdown', e => { 
+    if(e.target.id!=='skill-dock' && !e.target.classList.contains('skill-btn')) { 
+        Data.state.totalClicks++; 
+        Logic.hit(Logic.getC_Dmg(), e.clientX, e.clientY-($('header').offsetHeight), false); 
+    } 
+});
+
+document.querySelectorAll('.tab-btn').forEach(b => {
+    b.onclick = () => { Sys.sfx.btn(); document.querySelectorAll('.tab-btn, .tab-view').forEach(x=>x.classList.remove('active')); b.classList.add('active'); $(b.getAttribute('data-target')).classList.add('active'); Ach.check(); }
+});
+
+const bEvt = (id, o, gr, fm) => $(id).onclick = () => Logic.up(id, o, o.c, gr, fm);
+bEvt('up-click', Data.state.stat.c, 1.5, s=>s.p=Math.floor(s.p*1.4+5));
+bEvt('up-auto', Data.state.stat.a, 1.6, s=>s.p=s.l===1?5:Math.floor(s.p*1.4+2));
+$('up-crit').onclick = () => { if(Data.state.stat.crit.p<50) Logic.up('up-crit', Data.state.stat.crit, Data.state.stat.crit.c, 2.0, s=>s.p+=1); }
+bEvt('up-comp1', Data.state.comp.na, 1.8, s=>s.p=Math.floor(s.p*1.5+50));
+bEvt('up-comp2', Data.state.comp.yu, 2.2, s=>s.p+=10);
+
+setInterval(() => Data.save(), 5000);
+
+// 최초 실행 세팅
+Logic.calcMobStats();
+Data.state.mob.hp = Logic.curMaxHp;
+if(Data.state.mob.boss) {
+    Logic.bossActive = true;
+    Logic.bossMax = Data.state.relic[3] ? 40 : 30;
+    Logic.bossTime = Logic.bossMax;
+}
+
+calcOfflineProgress();
+UI.renderAll(); Ach.check();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
