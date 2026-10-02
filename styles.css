@@ -769,3 +769,7 @@ body { background:radial-gradient(ellipse at 50% 0,#454067 0,#28253f 70%); }
     .battle-label { display:none; }#mob-name { font-size:16px; margin:0 0 5px; }#next-boss { font-size:8px; margin-top:4px; }
     #attack-projectile { --projectile-travel:220px; }
 }
+
+/* 설정 탭 맨 아래: 저작권 · 엽쌤 앱 모음 링크 (다른 엽쌤 앱들과 같은 문구) */
+.app-credit { margin: 18px 0 4px; text-align: center; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.app-credit a { color: inherit; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
