@@ -568,3 +568,204 @@ dialog textarea { width: 100%; min-height: 120px; padding: 12px; margin-top: 6px
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Teacher adventure. Shared controls and save dialogs retain their layout. */
+:root { --ink:#343047; --muted:#756c81; --line:#e0cfac; --paper:#fffaf0; --accent:#59609c; --accent-light:#eee8fa; --gold:#b37b25; --blue:#7970bd; }
+body { background:radial-gradient(ellipse at 50% 0,#454067 0,#28253f 70%); }
+#game-app { width:min(1140px,100%); }
+#header { padding:18px 22px; margin-bottom:20px; border:1px solid #b7955b; border-radius:18px; background:linear-gradient(130deg,#373750,#25283f); color:#fff4d7; box-shadow:0 6px 0 #191b302e; }
+.topline { margin-bottom:15px; }
+.brand-mark { background:linear-gradient(145deg,#e7c887,#ae8451); color:#fff8e5; border:1px solid #f8dea0; box-shadow:inset 0 0 0 3px #6e574b30; }
+.brand h1 { letter-spacing:-.7px; color:#ffefc4; }
+.brand p,.work-clock .icon,.clock-target { color:#c9bed5; }
+#btn-sound { background:#4c4663; color:#eee0b9; border-color:#82705e; }
+.overview-row { gap:30px; }
+#player-level { color:#d9fae5; }
+#player-xp,.growth-caption { color:#c8d9d1; }
+#level-notice { color:#ffe097; }
+#player-xp-track { background:#181e35; height:8px; box-shadow:inset 0 1px 2px #0006; }
+#player-xp-fill { background:linear-gradient(90deg,#75c8af,#b5f0cb); box-shadow:0 0 10px #9ad2b5; }
+.hud-row { background:#24273d; border-color:#77614f; }
+.hud-badge+.hud-badge { border-color:#5c5061; }
+.hud-row .resource-label { color:#cfc1d9; }
+.hud-badge strong { color:#ffe4a1; }
+.res-gem strong { color:#c7b9fb; }.res-token strong { color:#a7e4c9; }
+.game-layout { grid-template-columns:1.3fr 1fr; gap:20px; align-items:start; }
+.play-column { gap:10px; }
+#battle-view { min-height:0; padding:13px; border:2px solid #caaa70; border-radius:17px; background:#33324b; box-shadow:0 5px 0 #181b302e; }
+#battle-view:hover { border-color:#f1d196; }
+.battle-top { margin-bottom:10px; color:#ead7ae; }
+.battle-top .eyebrow { display:flex; align-items:center; gap:5px; color:#e9d2a0; }
+.battle-top .icon { width:15px; height:15px; }.live-status { color:#b4efcc; }
+.live-status::before { background:#97e2b7; box-shadow:0 0 6px #a4f0c7; }
+.battle-body { display:block; position:relative; height:336px; padding:0; overflow:hidden; border:1px solid #b29a6b; border-radius:10px; background:#ead2ad url('assets/classroom.svg') center/cover no-repeat; isolation:isolate; }
+.scene-caption { position:absolute; top:12px; left:15px; font-size:10px; color:#745e49; background:#fff8dccc; padding:4px 8px; border-radius:20px; }
+#teacher-hero { position:absolute; left:20px; bottom:20px; width:210px; height:260px; z-index:2; transform-origin:50% 85%; --hero-hop:-8px; }
+#teacher-sprite { display:block; width:100%; height:calc(100% - 20px); object-fit:contain; object-position:bottom; filter:drop-shadow(0 5px 2px #745b5420); }
+.hero-badge { position:absolute; bottom:0; left:50%; transform:translateX(-50%); white-space:nowrap; color:#f9f3df; background:#47415c; border:1px solid #d5b67e; border-radius:20px; padding:2px 10px; font-size:10px; box-shadow:0 2px 0 #382d4420; }
+.hero-badge strong { color:#b7efcf; margin-left:4px; }
+.hero-aura { position:absolute; inset:12% 0 6%; border-radius:50%; background:radial-gradient(ellipse,#ffefa059,transparent 65%); z-index:-1; }
+.hero-celebration { position:absolute; top:3px; left:50%; transform:translateX(-50%); opacity:0; white-space:nowrap; background:#fff4c4; border:1px solid #d5b77c; color:#73563f; padding:3px 9px; border-radius:14px; font-size:10px; }
+#monster { position:absolute; right:28px; bottom:15px; width:155px; height:155px; padding:0; border:0; border-radius:0; box-shadow:none; background:transparent url('assets/enemy-0.svg') center/contain no-repeat; transform:none; z-index:2; filter:drop-shadow(0 6px 3px #79645b20); }
+#monster::before,#monster::after { content:none; }
+#monster[data-variant='1'] { background-image:url('assets/enemy-1.svg'); }
+#monster[data-variant='2'] { background-image:url('assets/enemy-2.svg'); }
+#monster[data-variant='3'] { background-image:url('assets/enemy-3.svg'); }
+#monster[data-variant='4'] { background-image:url('assets/enemy-4.svg'); }
+#monster.boss[data-variant='0'] { background-image:url('assets/enemy-0-boss.svg'); }
+#monster.boss[data-variant='1'] { background-image:url('assets/enemy-1-boss.svg'); }
+#monster.boss[data-variant='2'] { background-image:url('assets/enemy-2-boss.svg'); }
+#monster.boss[data-variant='3'] { background-image:url('assets/enemy-3-boss.svg'); }
+#monster.boss[data-variant='4'] { background-image:url('assets/enemy-4-boss.svg'); }
+#monster.hit { transform:translateX(4px) scale(.96); }
+.battle-copy { position:absolute; right:14px; top:14px; width:190px; padding:10px 12px; background:#fff8e9ed; border:1px solid #cfb888; border-radius:10px; z-index:3; box-shadow:0 3px 0 #9d7d4912; }
+.battle-label { font-size:9px; color:#8a7764; }
+#mob-name { font-size:18px; margin:2px 0 7px; color:#58435c; }
+.hp-label,.hp-label strong { font-size:9px; color:#776777; }
+.hp-track { height:7px; background:#e7d5ca; }.hp-fill { background:linear-gradient(90deg,#e28a89,#f0afa0); }
+#next-boss { font-size:9px; margin-top:5px; color:#877464; }
+.battle-foot { margin-top:9px; border-color:#6b5970; color:#e4d4b9; padding-top:0; min-height:20px; font-size:10px; }
+.keyboard-hint kbd { border-color:#807083; }
+#boss-timer-wrap { bottom:12px; left:15px; right:15px; color:#ffe0a6; font-size:10px; }
+.boss-track { background:#635365; }#boss-timer-fill { background:#ebbd65; }
+#battle-view.night-mode,#battle-view.boss-mode { background:#3d3053; }
+.night-mode .battle-body { box-shadow:inset 0 0 55px #7767ce50; }
+.night-mode #work-status,.boss-mode #work-status { color:#ffe1a7; }
+.boss-mode #mob-name { color:#9d5360; }.boss-mode .hp-fill { background:#d86e81; }
+#attack-projectile { position:absolute; left:33%; top:52%; font-size:34px; color:#fff7c1; text-shadow:0 0 5px #f7bc56,0 0 15px #f7bd4b; opacity:0; z-index:4; pointer-events:none; --projectile-travel:220px; }
+#attack-projectile.flying { animation:chalk-flight 360ms ease-out; }
+#teacher-hero.attacking { animation:hero-cast 360ms ease-out; }
+#teacher-hero.celebrate { animation:hero-cheer 600ms ease-in-out; }
+#teacher-hero.celebrate .hero-celebration { animation:praise-pop 600ms ease; }
+#teacher-hero.level-up { animation:hero-level 900ms ease; }
+@keyframes chalk-flight { 0% { opacity:0; transform:translateX(0) scale(.3); } 20% { opacity:1; } 80% { opacity:1; } 100% { opacity:0; transform:translateX(var(--projectile-travel)) scale(.7); } }
+@keyframes hero-cast { 40% { transform:translateX(5px) rotate(2deg); } }
+@keyframes hero-cheer { 30%,70% { transform:translateY(var(--hero-hop)); } }
+@keyframes hero-level { 35%,65% { transform:translateY(var(--hero-hop)); filter:brightness(1.16) drop-shadow(0 0 8px #ffdf84); } }
+@keyframes praise-pop { 15%,80% { opacity:1; } }
+.combat-metrics { background:#37344f; border-color:#89725d; color:#fff0cd; }
+.combat-metrics>div+div { border-color:#675872; }.combat-metrics .metric-label,.combat-metrics small { color:#cabdd4; }
+.skill-btn,#btn-s2 { background:linear-gradient(120deg,#514665,#393650); border:1px solid #b39770; color:#fff0ca; box-shadow:0 3px 0 #19192b40; }
+.skill-btn:hover:not(:disabled),#btn-s2:hover:not(:disabled) { background:#62506f; border-color:#ecd093; }
+.skill-icon { background:linear-gradient(140deg,#f5bc76,#d3855b); color:#fff4d0; border:1px solid #ffdc9a; box-shadow:inset 0 0 0 2px #aa635230; }
+#btn-s2 .skill-icon { background:linear-gradient(140deg,#bd98ed,#836dbf); color:#fff1ed; border:1px solid #e2c9f3; }
+.s-sub { color:#dbccdf; }.skill-state,#btn-s2 .skill-state { color:#bce7d3; }
+.skill-btn:disabled { background:#403a51!important; border-color:#79657c!important; }
+.skill-btn:disabled .skill-icon { background:#6e607e!important; color:#c9bacf!important; }
+.skill-btn:disabled .skill-state { color:#c4afca!important; }
+.skill-btn[data-active='true']:disabled,#btn-s2[data-active='true']:disabled { background:#574764!important; border-color:#e5c281!important; }
+.skill-btn[data-active='true']:disabled .skill-state,#btn-s2[data-active='true']:disabled .skill-state { color:#c6f2d9!important; }
+.goal-card { background:#363249; border-color:#837052; color:#f2debd; }.goal-card .eyebrow,#day-progress-text { color:#c9b7cf; }
+#panel-area { border:2px solid #c6a778; box-shadow:0 6px 0 #181b302e; }
+#tab-nav { background:#ebe0c9; border-color:#d5bf9b; }.tab-btn.active { color:#5b4e88; }.tab-btn.active::after { background:#8c77ae; }
+.up-card { background:linear-gradient(115deg,#fffdf6,#f7ecd8); border-color:#deccac; }
+.upgrade-icon { background:#f4ddae; color:#987343; border:1px solid #d9b67d; box-shadow:inset 0 0 0 2px #fff4d4; }
+.up-card:nth-child(2) .upgrade-icon { background:#dcebe2; color:#577c6a; border-color:#9dbea9; }
+.up-card:nth-child(3) .upgrade-icon { background:#e9dff3; color:#8961a0; border-color:#bfa3d0; }
+.up-btn { background:#7c689b; border-color:#685684; box-shadow:0 2px 0 #58456b; }.up-btn:hover:not(:disabled) { background:#685484; }
+.up-btn:disabled { background:#e8ddc9; border-color:#d3bea0; color:#8b775e; box-shadow:none; }
+.milestone-bar { background:#a6cfb5; height:3px; }
+.gacha-banner,.prestige-panel { background:#f2e7d0; }.relic-item { background:#f7eddb; }
+.app-footnote { color:#b6a5c5; }#toast { background:#49405d; border:1px solid #c7ab76; }
+@media (min-width:600px) and (max-width:999px) {
+    .game-layout { grid-template-columns:1.1fr 1fr; gap:14px; }
+    .battle-body { height:290px; }#teacher-hero { left:4px; width:155px; height:205px; bottom:12px; }
+    #monster { right:14px; width:110px; height:110px; bottom:14px; }
+    .battle-copy { width:155px; top:10px; right:10px; padding:8px; }.scene-caption { display:none; }
+    #mob-name { font-size:15px; }#attack-projectile { --projectile-travel:110px; }
+}
+@media (max-width:599px) {
+    body { padding:12px 10px 22px; }#header { padding:10px 12px; margin-bottom:10px; border-radius:14px; }
+    .topline { margin-bottom:8px; }.overview-row { gap:8px; }.brand h1 { font-size:16px; }.brand p { display:none; }
+    .hud-badge { padding:6px 8px; }.hud-badge strong { font-size:14px; }#player-level { font-size:17px; }
+    #player-xp-track { height:6px; }.game-layout { grid-template-columns:1fr; gap:10px; }.play-column { display:flex; gap:8px; }
+    #battle-view { padding:8px; border-radius:14px; }.battle-top { margin-bottom:7px; }.battle-top .eyebrow,.live-status { font-size:9px; }
+    .battle-body { height:200px; }.scene-caption { display:none; }
+    #teacher-hero { left:10px; bottom:10px; width:142px; height:166px; }
+    #teacher-sprite { height:calc(100% - 17px); }.hero-badge { font-size:8px; padding:1px 7px; }
+    #monster { right:19px; bottom:8px; width:105px; height:105px; }
+    .battle-copy { top:9px; right:9px; width:154px; padding:7px 9px; }.battle-label { display:none; }
+    #mob-name { font-size:15px; margin:0 0 5px; }.hp-label,.hp-label strong { font-size:9px; margin-bottom:4px; }.hp-track { height:6px; }
+    #next-boss { display:block; font-size:8px; margin-top:4px; }
+    .battle-foot { margin-top:6px; min-height:18px; font-size:9px; }.keyboard-hint { display:none; }
+    #boss-timer-wrap { bottom:8px; left:10px; right:10px; font-size:9px; }
+    #attack-projectile { font-size:25px; --projectile-travel:135px; }
+    .combat-metrics>div { padding:5px 10px; }.combat-metrics strong { font-size:18px; }.metric-label { font-size:10px; }
+    .skill-btn,#btn-s2 { min-height:50px; padding:8px 10px; }.skill-icon { width:29px; height:29px; }
+    .s-title { font-size:12px; }.s-sub { display:none; }.skill-state { font-size:9px; }
+    .goal-card,.app-footnote { display:none; }.tab-btn { height:44px; }.tab-view { padding:13px 11px; max-height:none; overflow:visible; }
+    .panel-heading { margin-bottom:10px; }.up-card { min-height:58px; padding:8px 9px; }.upgrade-list { gap:7px; }
+    .up-btn { min-height:40px; }.up-desc { display:none; }
+}
+@media (max-width:599px) and (max-height:740px) {
+    body { padding:8px; }#header { padding:8px 10px; margin-bottom:8px; }.brand h1 { font-size:14px; }
+    .hud-badge { padding:4px 7px; }.hud-badge strong { font-size:13px; }.overview-row { gap:6px; }#player-level { font-size:15px; }
+    .game-layout { gap:8px; }.play-column { gap:6px; }.battle-body { height:152px; }
+    #teacher-hero { left:9px; bottom:7px; width:112px; height:128px; --hero-hop:-3px; }
+    #monster { right:21px; bottom:5px; width:80px; height:80px; }
+    .battle-copy { top:7px; right:8px; width:145px; padding:6px 8px; }#mob-name { font-size:13px; }
+    #next-boss { display:none; }.combat-metrics>div { padding:3px 9px; }.combat-metrics strong { font-size:16px; }
+    .skill-btn,#btn-s2 { min-height:44px; padding:5px 8px; }.skill-icon { width:25px; height:25px; }
+    .tab-btn { height:40px; }.tab-view { padding:8px 9px; }#tab-stat .panel-heading { display:none; }
+    .up-card { min-height:52px; padding:6px 8px; }.upgrade-list { gap:5px; }.up-title { font-size:12px; }
+    .help-details { margin-top:5px; }.quiet-note { margin-top:3px; padding-top:5px; }#attack-projectile { --projectile-travel:120px; }
+}
+@media (max-width:359px) and (max-height:650px) {
+    .battle-body { height:130px; }#teacher-hero { height:109px; width:96px; bottom:6px; }
+    #monster { width:63px; height:63px; right:21px; bottom:5px; }.battle-copy { width:138px; padding:5px 7px; }
+    #mob-name { font-size:12px; }.up-card { min-height:48px; }.skill-icon { width:23px; height:23px; }
+    #attack-projectile { --projectile-travel:100px; }
+}
+@media (min-width:600px) and (max-height:600px), (max-width:599px) and (max-height:450px) {
+    body { padding:7px; }#header { padding:7px 10px; margin-bottom:7px; }.brand h1 { font-size:13px; }.brand p { display:none; }
+    .topline { margin-bottom:5px; }.overview-row { grid-template-columns:1fr 1fr; gap:12px; }#player-progress { grid-row:auto; }
+    .hud-badge { padding:3px 5px; flex-direction:row; align-items:center; }.hud-badge strong { font-size:11px; }.resource-label { font-size:8px; }
+    #player-level { font-size:13px; }#player-xp { font-size:8px; }.growth-caption { display:none; }.game-layout { grid-template-columns:1fr 1fr; gap:8px; }
+    .play-column { gap:5px; }#battle-view { padding:6px; }.battle-top { margin-bottom:5px; }.battle-top .eyebrow,.live-status { font-size:8px; }
+    .battle-body { height:132px; }#teacher-hero { width:92px; height:105px; bottom:7px; left:0; --hero-hop:-3px; }
+    #monster { width:64px; height:64px; right:14px; bottom:5px; }.battle-copy { width:126px; top:6px; right:6px; padding:5px 7px; }
+    #mob-name { font-size:11px; }.hp-label,.hp-label strong { font-size:8px; }.battle-label,#next-boss,.scene-caption { display:none; }
+    .hero-badge { font-size:7px; }.hero-celebration { font-size:8px; }.battle-foot { min-height:14px; margin-top:4px; font-size:8px; }
+    .combat-metrics>div { padding:2px 7px; flex-direction:row; }.metric-label { font-size:8px; }.combat-metrics strong { font-size:13px; }
+    .skill-btn,#btn-s2 { min-height:37px; padding:4px 6px; gap:4px; }.skill-icon { width:21px; height:21px; }.s-title { font-size:10px; }.skill-state { font-size:8px; }.s-sub { display:none; }
+    .goal-card,.app-footnote { display:none; }.tab-btn { height:35px; font-size:9px; gap:3px; }.tab-view { padding:6px 7px; max-height:calc(100dvh - 126px); overflow-y:auto; }
+    #tab-stat .panel-heading { display:none; }.up-card { min-height:43px; padding:4px 6px; gap:6px; }.up-title { font-size:10px; }.up-stat { font-size:8px; }
+    .up-btn { min-width:48px; min-height:32px; font-size:9px; }.upgrade-icon { width:23px; height:23px; }.up-desc { display:none; }
+    #tab-stat .help-details,#tab-stat .quiet-note { display:none; }#attack-projectile { font-size:22px; --projectile-travel:75px; }
+    #boss-timer-wrap { bottom:6px; left:8px; right:8px; font-size:8px; }
+}
+@media (prefers-reduced-motion:reduce) { #monster.hit { transform:none; } }
+@media (max-width:599px) and (min-height:451px) and (max-height:840px) {
+    #header { padding:6px 9px; }.topline { margin-bottom:5px; }.brand-mark { width:27px; height:27px; }
+    #btn-sound { width:28px; height:28px; }#btn-sound .icon { width:16px; height:16px; }
+    .overview-row { gap:4px; }.hud-badge { padding:3px 7px; }#player-level { font-size:13px; }
+    .progress-label { margin-bottom:2px; }#player-xp-track { height:4px; }
+    .battle-body { height:140px; }#teacher-hero { height:117px; width:105px; }
+    #monster { height:71px; width:71px; }.battle-copy { padding:5px 7px; }#mob-name { font-size:12px; }
+    .up-card { min-height:48px; padding:4px 8px; }.up-btn { min-height:38px; }
+    .play-column { gap:5px; }.game-layout { gap:7px; }
+}
+@media (max-width:599px) and (min-height:451px) and (max-height:620px) {
+    .battle-body { height:112px; }#teacher-hero { height:92px; width:82px; bottom:5px; }
+    #monster { height:50px; width:50px; bottom:4px; }.battle-copy { top:5px; padding:4px 7px; }
+    #mob-name { font-size:11px; margin-bottom:4px; }.hp-label,.hp-label strong { font-size:8px; margin-bottom:3px; }.hp-track { height:5px; }
+    .up-card { min-height:46px; }.up-btn { min-height:36px; }.combat-metrics>div { padding:2px 9px; }
+    .skill-btn,#btn-s2 { min-height:40px; }.battle-foot { min-height:15px; font-size:8px; margin-top:4px; }
+    .battle-top { margin-bottom:5px; }#attack-projectile { font-size:21px; --projectile-travel:105px; }
+}
+@media (max-width:359px) and (min-height:451px) and (max-height:580px) {
+    .battle-body { height:100px; }#teacher-hero { height:82px; width:75px; }
+    #monster { width:43px; height:43px; }.hero-badge { font-size:7px; }
+}
+@media (min-width:600px) and (max-height:600px), (max-width:599px) and (max-height:450px) {
+    .battle-body { height:88px; }#teacher-hero { height:70px; width:65px; bottom:5px; }
+    #monster { width:38px; height:38px; bottom:4px; }.battle-copy { width:122px; top:3px; padding:2px 6px; }
+    #mob-name { margin-bottom:3px; font-size:10px; }.hp-label,.hp-label strong { font-size:7px; margin-bottom:2px; }.hp-track { height:4px; }
+    .tab-btn { height:40px; }#attack-projectile { top:54%; --projectile-travel:75px; }
+}
+@media (min-width:1000px) and (max-height:820px) {
+    .battle-body { height:220px; }#teacher-hero { width:160px; height:180px; bottom:12px; }
+    #monster { width:105px; height:105px; bottom:10px; }.battle-copy { width:180px; top:10px; padding:7px 10px; }
+    .battle-label { display:none; }#mob-name { font-size:16px; margin:0 0 5px; }#next-boss { font-size:8px; margin-top:4px; }
+    #attack-projectile { --projectile-travel:220px; }
+}

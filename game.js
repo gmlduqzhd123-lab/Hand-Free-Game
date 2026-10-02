@@ -3,8 +3,8 @@
 /* The same discrete battle rules drive visible play and away progress. */
 const Simulation = {
     OFFLINE_LIMIT_MS: 86400000,
-    names: ['나이스 결재', '협조전 처리', '학급 일지', '체온 측정표', '조퇴 사유서'],
-    bosses: ['6학년 PAPS 측정', '수영부 예산 품의', '보성-강진 연수', '200명 참관 공개수업', '종합 세트 AI 보고서'],
+    names: ['졸음 슬라임', '낙서 유령', '먼지 뭉치', '종이 박쥐', '장난 도깨비'],
+    bosses: ['왕관 슬라임', '칠판 낙서왕', '먼지 대장', '종이 비행용', '장난감 대마왕'],
 
     xpForLevel(level) { return GameLimits.xpForLevel(level); },
     getPlayerMultiplier(state) { return 1 + (state.player.level - 1) * 0.05; },
@@ -207,11 +207,11 @@ const Simulation = {
 
 const Ach = {
     list: [
-        { id: 0, title: '첫 결재', desc: '공문 10개 파쇄', condition: s => s.kills >= 10, rwd: 5 },
+        { id: 0, title: '첫 모험', desc: '몬스터 10마리 처치', condition: s => s.kills >= 10, rwd: 5 },
         { id: 1, title: '퇴근 예행 연습', desc: '16:10 보스 처치', condition: s => s.bossKills >= 1, rwd: 20 },
         { id: 2, title: '광란의 손가락', desc: '화면 500회 터치', condition: s => s.totalClicks >= 500, rwd: 15 },
-        { id: 3, title: '부장님의 인정', desc: '골드 100만 달성', condition: s => s.gold >= 1000000, rwd: 30 },
-        { id: 4, title: '업무의 달인', desc: '추가 공격 Lv 50 달성', condition: s => s.stat.c.l >= 50, rwd: 50 }
+        { id: 3, title: '교실의 보물', desc: '골드 100만 달성', condition: s => s.gold >= 1000000, rwd: 30 },
+        { id: 4, title: '분필 마법사', desc: '분필 마법 Lv 50 달성', condition: s => s.stat.c.l >= 50, rwd: 50 }
     ],
     evaluate(state) {
         let changed = false;
@@ -314,20 +314,26 @@ const Logic = {
             VFX.add((events.critical ? '치명타 ' : '-') + (typeof fNum === 'function' ? fNum(events.lastDamage) : events.lastDamage), x, y, auto ? 'auto' : events.critical ? 'crit' : 'normal');
             if (events.kills > 0) VFX.add('골드 +' + (typeof fNum === 'function' ? fNum(events.gold) : events.gold), center.x, center.y - 20, 'gold');
         }
-        if (events.kills > 0) this.sound('coin');
+        if (events.kills > 0) {
+            this.sound('coin');
+            if (typeof VFX !== 'undefined' && VFX.celebrate) VFX.celebrate();
+        }
     },
     notify(events, offline = false) {
         const messages = [];
         if (offline) {
-            if (events.gold > 0 || events.kills > 0 || events.xpGained > 0) messages.push(`⏰ 자리 비움 성장 완료!<br>EXP +${typeof fNum === 'function' ? fNum(events.xpGained) : events.xpGained} · 💰${typeof fNum === 'function' ? fNum(events.gold) : events.gold} · ${events.kills}개 파쇄${events.capped ? ' (최대 24시간)' : ''}`);
-            if (events.bossExpired > 0) messages.push('❌ 자리 비움 중 보스 기한이 만료되어 서류가 반려됐습니다.');
+            if (events.gold > 0 || events.kills > 0 || events.xpGained > 0) messages.push(`⏰ 자리 비움 성장 완료!<br>EXP +${typeof fNum === 'function' ? fNum(events.xpGained) : events.xpGained} · 💰${typeof fNum === 'function' ? fNum(events.gold) : events.gold} · ${events.kills}마리 처치${events.capped ? ' (최대 24시간)' : ''}`);
+            if (events.bossExpired > 0) messages.push('⏳ 자리 비움 중 보스가 달아났어요. 다시 도전해 보세요.');
         } else {
-            if (events.bossExpired > 0) { this.sound('err'); messages.push('❌ 기한 만료! 서류 반려됨.'); }
+            if (events.bossExpired > 0) { this.sound('err'); messages.push('⏳ 보스가 달아났어요. 성장하고 다시 도전!'); }
             if (events.bossKills > 0) messages.push(`🎉 보스 격파! 💎${typeof fNum === 'function' ? fNum(events.gems) : events.gems} 획득`);
             if (events.bossSpawned > 0 && typeof Sys !== 'undefined' && Sys.shake) Sys.shake('hard');
         }
-        if (events.levelsGained > 0) messages.push(`✨ Lv ${Data.state.player.level} 달성!${events.levelsGained > 1 ? ` (+${events.levelsGained} 레벨)` : ''} 공격력 +${Math.round((Data.state.player.level - 1) * 5)}%`);
-        if (events.reachedFinish) messages.push('🎉 16:40 달성! 칼퇴 확정! 이후에도 업무를 계속하거나 내일 출근할 수 있습니다.');
+        if (events.levelsGained > 0) {
+            messages.push(`✨ Lv ${Data.state.player.level} 달성!${events.levelsGained > 1 ? ` (+${events.levelsGained} 레벨)` : ''} 공격력 +${Math.round((Data.state.player.level - 1) * 5)}%`);
+            if (!offline && typeof VFX !== 'undefined' && VFX.levelUp) VFX.levelUp();
+        }
+        if (events.reachedFinish) messages.push('🎉 16:40 달성! 오늘의 교실을 지켰어요. 모험을 계속하거나 내일의 모험을 시작하세요.');
         if (messages.length) this.toast(messages.join('<br>'));
     },
     advance(from, to, options = {}) {
@@ -403,13 +409,13 @@ const Logic = {
         this.catchUp();
         if (Data.state.gem < 10) return false;
         const available = Data.state.relic.flatMap((owned, index) => owned ? [] : [index]);
-        if (!available.length) { this.toast('모든 교보재를 모았습니다!'); return false; }
+        if (!available.length) { this.toast('모든 유물을 모았습니다!'); return false; }
         const candidate = this.cloneState();
         candidate.gem -= 10;
         candidate.relic[available[Math.floor(Math.random() * available.length)]] = true;
         if (!this.commit(candidate)) return false;
         this.sound('gacha');
-        this.toast('🎁 특급 교보재 지원 완료!');
+        this.toast('🎁 새로운 교실 유물을 발견했어요!');
         this.sync();
         this.render();
         return true;
@@ -417,8 +423,8 @@ const Logic = {
     prestige() {
         if (!this.canAct()) return false;
         this.catchUp();
-        if (Data.state.min <= 0) { this.toast('업무를 더 진행하고 퇴근하세요.'); return false; }
-        if (typeof confirm === 'function' && !confirm(`초기화 후 내일 출근합니다.\n연수학점 🏅${typeof fNum === 'function' ? fNum(Data.state.min) : Data.state.min} 획득!`)) return false;
+        if (Data.state.min <= 0) { this.toast('모험을 더 진행하면 연수학점을 받을 수 있어요.'); return false; }
+        if (typeof confirm === 'function' && !confirm(`현재 모험을 정산하고 다음 모험을 시작할까요?\n연수학점 🏅${typeof fNum === 'function' ? fNum(Data.state.min) : Data.state.min} 획득!`)) return false;
         const previous = this.cloneState();
         Ach.evaluate(previous);
         const candidate = Data.createDefault();
@@ -438,7 +444,7 @@ const Logic = {
         this.sync();
         Ach.check();
         this.render();
-        this.toast('🏅 연수학점을 받고 내일 출근했습니다.');
+        this.toast('🏅 연수학점을 받고 다음 모험을 시작했어요.');
         return true;
     }
 };
@@ -462,7 +468,7 @@ const Combat = {
         candidate.buff[`${type}Until`] = now + skill.d * 1000;
         if (!Logic.commit(candidate)) return false;
         Logic.sound('gacha');
-        Logic.toast(type === 'rush' ? '집중 처리 시작 · 5초간 빠른 자동 클릭' : '몰입 모드 시작 · 10초간 추가 공격 치명타 100%');
+        Logic.toast(type === 'rush' ? '반짝 분필 · 5초간 빠른 마법 공격' : '칭찬의 마법 · 10초간 추가 공격 치명타 100%');
         Logic.sync(now);
         Logic.render();
         return true;

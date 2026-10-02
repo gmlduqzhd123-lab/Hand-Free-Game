@@ -1,12 +1,13 @@
 """Real Chromium regression checks. Run a static server, then pass its URL.
 
-Uses the system Chromium and the environment's HTTPS proxy with TLS validation
-enabled. Requires the already-installed Playwright Python package.
+Uses a discovered system or Playwright Chromium, or CHROMIUM_PATH, and the
+environment's HTTPS proxy with TLS validation enabled. Requires Playwright.
 """
 
 import argparse
 import json
 import os
+import shutil
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -15,25 +16,52 @@ from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
 
+def chromium_path(playwright):
+    """Prefer an explicit override, then installed browsers on any host OS."""
+    configured = os.environ.get("CHROMIUM_PATH")
+    if configured:
+        if not Path(configured).is_file():
+            raise FileNotFoundError(f"CHROMIUM_PATH does not exist: {configured}")
+        return configured
+    candidates = [shutil.which(name) for name in ["chromium", "chromium-browser", "google-chrome", "chrome", "msedge"]]
+    for variable in ["PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"]:
+        if os.environ.get(variable):
+            base = Path(os.environ[variable])
+            candidates.extend(str(base / relative) for relative in ["Google/Chrome/Application/chrome.exe", "Microsoft/Edge/Application/msedge.exe"])
+    candidates.append("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    candidates.append(playwright.chromium.executable_path)
+    cache = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".cache")) / "ms-playwright"
+    if cache.is_dir():
+        candidates.extend(str(path) for path in sorted(cache.glob("chromium-*/chrome-win*/chrome.exe"), reverse=True))
+    return next((candidate for candidate in candidates if candidate and Path(candidate).is_file()), None)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", nargs="?", default=os.environ.get("BASE_URL", "http://127.0.0.1:8000/"))
     parser.add_argument("--output", help="Optional JSON result file")
     parser.add_argument("--screenshots", help="Optional directory for initial and progressed layout screenshots")
+    parser.add_argument("--check", action="append", help="Run only checks containing this text (repeatable)")
     args = parser.parse_args()
     results = []
 
     with sync_playwright() as playwright:
-        launch = {"executable_path": os.environ.get("CHROMIUM_PATH", "/usr/bin/chromium"), "headless": True}
+        launch = {"headless": True}
+        executable = chromium_path(playwright)
+        if executable:
+            launch["executable_path"] = executable
         proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
         if proxy:
             launch["proxy"] = {"server": proxy, "bypass": "127.0.0.1,localhost"}
         browser = playwright.chromium.launch(**launch)
 
         @contextmanager
-        def fresh(viewport=None, raw=None):
-            context = browser.new_context(viewport=viewport or {"width": 390, "height": 844})
+        def fresh(viewport=None, raw=None, clock=None, reduced_motion=False):
+            context = browser.new_context(viewport=viewport or {"width": 390, "height": 844},
+                reduced_motion="reduce" if reduced_motion else "no-preference")
             errors = []
+            if clock is not None:
+                context.add_init_script("Date.now = () => " + str(clock))
             if raw is not None:
                 context.add_init_script("""(() => {
                     if (!['http:', 'https:'].includes(location.protocol)) return;
@@ -69,6 +97,8 @@ def main():
                 context.close()
 
         def check(name, function):
+            if args.check and not any(fragment.lower() in name.lower() for fragment in args.check):
+                return
             try:
                 detail = function()
                 results.append({"name": name, "passed": True, "detail": detail})
@@ -342,13 +372,59 @@ def main():
             with fresh() as (_, page, _):
                 for tab in ["tab-stat", "tab-comp", "tab-relic", "tab-ach", "tab-sys"]:
                     page.locator(f'[data-target="{tab}"]').click()
-                labels = page.evaluate(r"""() => [document.title, document.body.textContent,
+                labels = page.evaluate(r"""() => [document.title, document.querySelector('meta[name="description"]').content, document.body.textContent,
                     ...[...document.querySelectorAll('[aria-label]')].map(element => element.getAttribute('aria-label'))].join('\n')""")
                 for personal_name in ["나명심", "유미혜", "엽쌤", "엽아"]:
                     assert personal_name not in labels, f"personal name is still rendered: {personal_name}"
-                assert "체력 코치" in labels
-                assert "응원 동료" in labels
+                assert "체육 요정" in labels, "the automatic companion's generic role label is missing"
+                assert "응원 요정" in labels, "the click companion's generic role label is missing"
+                assert "선생님" in labels and "초등" in labels, "the teacher premise is absent from game copy"
+                assert "선생님" in page.title(), "the title does not identify the teacher RPG"
                 return {"title": page.title(), "companions": "generic role labels", "personalNamesRemoved": True}
+
+        def upgrades_relics_prestige_backup():
+            with fresh() as (_, page, _):
+                page.evaluate("window.flowClock = Date.now(); Date.now = () => flowClock; Data.state.gold = 100000; Data.state.gem = 40; UI.renderAll()")
+                starting_gold = page.evaluate("Data.state.gold")
+                for button, state, level in [("up-click", "stat.c", 2), ("up-auto", "stat.a", 2), ("up-crit", "stat.crit", 1)]:
+                    before = page.evaluate(f"Data.state.{state}.c")
+                    page.locator(f"#{button}").click()
+                    assert page.evaluate(f"Data.state.{state}.l") == level
+                    starting_gold -= before
+                    assert page.evaluate("Data.state.gold") == starting_gold, f"{button} charged an unexpected amount"
+                page.locator('[data-target="tab-comp"]').click()
+                for button, state in [("up-comp1", "comp.na"), ("up-comp2", "comp.yu")]:
+                    page.locator(f"#{button}").click()
+                    assert page.evaluate(f"Data.state.{state}.l") == 1
+                    assert page.evaluate(f"Data.state.{state}.p") > 0
+                page.locator('[data-target="tab-relic"]').click()
+                for owned in range(1, 5):
+                    page.locator("#btn-gacha").click()
+                    assert page.evaluate("Data.state.relic.filter(Boolean).length") == owned, "relic draw awarded a duplicate"
+                    assert page.evaluate("Data.state.gem") == 40 - 10 * owned
+                assert page.locator("#btn-gacha").is_disabled(), "completed relic collection remains purchasable"
+                page.evaluate("Data.state.min = 2; Data.state.player = {level:7,xp:13}; Data.state.xpRemainder = 0.25; Data.state.ach[0] = true; Data.state.achReady[0] = true; Data.state.totalClicks = 501; Data.state.lastActiveAt = flowClock; UI.renderAll()")
+                page.locator('[data-target="tab-sys"]').click()
+                page.once("dialog", lambda dialog: dialog.accept())
+                page.locator('button[onclick="Logic.prestige()"]').click()
+                preserved = page.evaluate("({player:{...Data.state.player}, xpRemainder:Data.state.xpRemainder, token:Data.state.token, relic:[...Data.state.relic], ach:[...Data.state.ach], totalClicks:Data.state.totalClicks})")
+                assert preserved == {"player": {"level": 7, "xp": 13}, "xpRemainder": 0.25, "token": 2, "relic": [True] * 4, "ach": [True, False, False, False, False], "totalClicks": 501}
+                assert page.evaluate("Data.state.gold === 0 && Data.state.min === 0 && Data.state.stat.a.p === 10 && Data.state.comp.na.l === 0 && Data.state.comp.yu.l === 0")
+                page.evaluate("Object.defineProperty(navigator, 'clipboard', {configurable: true, value: undefined}); Sys.export()")
+                page.locator("#backup-dialog").wait_for(state="visible")
+                code = page.locator("#backup-code").input_value()
+                page.locator("#backup-close").click()
+                page.once("dialog", lambda dialog: dialog.accept())
+                page.locator('button[onclick="Sys.hardReset()"]').click()
+                assert page.evaluate("Data.state.token") == 0
+                page.locator('button[onclick="Sys.import()"]').click()
+                page.locator("#import-code").fill(code)
+                page.locator("#import-submit").click()
+                assert page.locator("#import-dialog").is_hidden()
+                restored = page.evaluate("({player:{...Data.state.player}, xpRemainder:Data.state.xpRemainder, token:Data.state.token, relic:[...Data.state.relic], ach:[...Data.state.ach], totalClicks:Data.state.totalClicks})")
+                assert restored == preserved, "valid UI backup round trip lost earned progress"
+                assert page.evaluate("JSON.parse(localStorage.getItem(Data.key)).token") == 2
+                return {"upgrades": 5, "distinctRelics": 4, "prestigeTokens": 2, "backupRestoredEarnedProgress": True}
 
         def migrated_xp_reload_reset():
             with fresh() as (_, source, _):
@@ -389,11 +465,42 @@ def main():
                 return {"legacyGold": 777, "freeStarter": True, "reloadedPlayer": {"level": 7, "xp": 13},
                     "reloadBonus": 0, "resetRestoresIdleStart": True}
 
+        def old_saved_progress():
+            with fresh() as (_, source, _):
+                fixture = source.evaluate("""() => {
+                    const now = Date.now(); const state = Data.createDefault();
+                    state.version = 2; delete state.player; delete state.xpRemainder;
+                    state.gold = 12345; state.gem = 36; state.token = 12;
+                    state.kills = 104; state.min = 1; state.totalClicks = 654; state.bossKills = 1;
+                    state.stat.c = {l:22,p:1234,c:789}; state.stat.a = {l:9,p:321,c:999};
+                    state.stat.crit = {l:7,p:7,c:888};
+                    state.comp.na = {l:3,p:225,c:10000}; state.comp.yu = {l:4,p:40,c:20000};
+                    state.relic = [true,false,true,false]; state.ach = [true,true,false,false,false];
+                    state.achReady = [true,true,true,false,false]; state.mob.hp = 40;
+                    state.skill = {r:now-10000,n:now-5000}; state.lastActiveAt = now; state.sound = false;
+                    return {raw:JSON.stringify(state), now};
+                }""")
+            with fresh(raw=fixture["raw"], clock=fixture["now"]) as (_, page, _):
+                old = json.loads(fixture["raw"])
+                current = page.evaluate("JSON.parse(JSON.stringify(Data.state))")
+                for field in ["gold", "gem", "token", "kills", "min", "totalClicks", "bossKills", "stat", "comp", "relic", "ach", "achReady", "mob", "sound"]:
+                    assert current[field] == old[field], f"version 2 migration lost {field}: {current[field]}"
+                assert current["player"] == {"level": 1, "xp": 0}
+                assert current["skill"] == {"rush": old["skill"]["r"], "night": old["skill"]["n"]}
+                assert page.locator("#lv-click").inner_text() == "22"
+                page.locator('[data-target="tab-comp"]').click()
+                assert page.locator("#lv-comp1").inner_text() == "3"
+                assert page.locator("#lv-comp2").inner_text() == "4"
+                assert page.evaluate("Data.save()") is True
+                persisted = page.evaluate("JSON.parse(localStorage.getItem('ys_bugfree_final_v2'))")
+                assert persisted["version"] == 4 and persisted["gold"] == 12345
+                return {"legacyVersion": 2, "sameStorageKey": "ys_bugfree_final_v2", "preserved": "all currencies, upgrades, companions, relics, achievements, enemy HP, skill cooldowns, sound", "automaticUpgradePreserved": {"level": 9, "power": 321}}
+
         def layouts():
             sizes = [(320, 568), (320, 601), (375, 667), (390, 600), (390, 601), (390, 650), (390, 651),
                 (390, 741), (390, 780), (390, 820), (320, 821), (390, 821), (390, 840), (390, 841),
-                (390, 844), (412, 915), (768, 1024),
-                (844, 320), (844, 360), (1024, 768), (1280, 720), (1440, 900)]
+                (390, 844), (412, 915), (430, 932), (768, 1024),
+                (568, 320), (844, 320), (844, 360), (1024, 768), (1280, 720), (1440, 900)]
             checked = []
             for width, height in sizes:
                 with fresh({"width": width, "height": height}) as (_, page, _):
@@ -488,6 +595,106 @@ def main():
                         checked.append(f"{dialog_id} {width}x{height}")
             return {"reachableDialogs": checked}
 
+        def teacher_animation_behavior():
+            with fresh() as (_, page, _):
+                hero = page.locator("#teacher-hero")
+                assert hero.is_visible(), "the protagonist is not visible"
+                page.wait_for_function("$('teacher-hero').classList.contains('attacking')", timeout=2500)
+                assert page.evaluate("Data.state.totalClicks") == 0, "automatic teacher attacks required input"
+                page.evaluate("window.heroClock = Date.now(); Date.now = () => heroClock; Data.state.mob.hp = 1")
+                page.locator("#battle-view").click(position={"x": 20, "y": 20})
+                assert page.evaluate("$('teacher-hero').classList.contains('attacking')"), "a manual attack did not animate the teacher"
+                assert page.evaluate("$('teacher-hero').classList.contains('celebrate')"), "defeating an enemy did not animate the teacher"
+                assert page.evaluate("$('attack-projectile').classList.contains('flying')"), "a teacher attack did not launch its effect"
+                page.evaluate("Data.state.player = {level:1,xp:15}; Data.state.xpRemainder = 0; Data.state.lastActiveAt = heroClock; heroClock += 1000; Logic.catchUp(heroClock)")
+                assert page.evaluate("Data.state.player.level") == 2
+                assert page.evaluate("$('teacher-hero').classList.contains('level-up')"), "a passive level-up did not animate the teacher"
+                assert page.locator("#hero-level").inner_text() == "Lv.2"
+                page.wait_for_timeout(1000)
+                assert page.evaluate("!['attacking','celebrate','level-up'].some(name => $('teacher-hero').classList.contains(name))"), "teacher animation did not clean up"
+                assert page.evaluate("!$('attack-projectile').classList.contains('flying')"), "projectile animation did not clean up"
+                return {"noInputAttack": True, "manualAttack": True, "enemyDefeatCelebration": True, "passiveLevelUp": True, "animationCleanup": True}
+
+        def teacher_enemy_layouts():
+            checked = []
+            for width, height in [(320, 601), (375, 667), (390, 844), (430, 932), (568, 320), (844, 320), (1024, 768), (1280, 720), (1440, 900)]:
+                with fresh({"width": width, "height": height}) as (_, page, _):
+                    page.evaluate("window.artClock = Date.now(); Date.now = () => artClock")
+                    page.evaluate("() => document.fonts.ready")
+                    assert page.locator("#teacher-sprite").is_visible()
+                    page.wait_for_function("$('teacher-sprite').complete && $('teacher-sprite').naturalWidth > 0")
+
+                    def contained_art():
+                        violations = page.evaluate("""() => {
+                            const problems = [];
+                            const battle = $('battle-view').getBoundingClientRect();
+                            for (const selector of ['#teacher-sprite', '#monster']) {
+                                const element = document.querySelector(selector);
+                                if (!element) { problems.push(`${selector} is missing`); continue; }
+                                const box = element.getBoundingClientRect();
+                                if (!(box.width > 0 && box.height > 0)) problems.push(`${selector} has no area`);
+                                const within = (outer, x = true, y = true) =>
+                                    (!x || (box.left >= outer.left - 2 && box.right <= outer.right + 2)) &&
+                                    (!y || (box.top >= outer.top - 2 && box.bottom <= outer.bottom + 2));
+                                if (!within(battle)) problems.push(`${selector} escapes battle: ${JSON.stringify({left:box.left,top:box.top,right:box.right,bottom:box.bottom})}`);
+                                if (box.left < -1 || box.right > innerWidth + 1 || box.top < -1 || box.bottom > innerHeight + 1) problems.push(`${selector} escapes viewport`);
+                                for (let ancestor = element.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+                                    const style = getComputedStyle(ancestor);
+                                    const clipsX = ['hidden','clip','auto','scroll'].includes(style.overflowX);
+                                    const clipsY = ['hidden','clip','auto','scroll'].includes(style.overflowY);
+                                    if ((clipsX || clipsY) && !within(ancestor.getBoundingClientRect(), clipsX, clipsY)) problems.push(`${selector} clipped by ${ancestor.id || ancestor.className}`);
+                                }
+                            }
+                            return problems;
+                        }""")
+                        assert not violations, f"art clipping at {width}x{height}: {'; '.join(violations)}"
+
+                    for boss in [False, True]:
+                        for variant in range(5):
+                            page.evaluate("""({boss, variant}) => {
+                                Data.state.kills = boss ? (variant + 1) * 100 : variant;
+                                Simulation.spawn(Data.state, boss, artClock);
+                                Logic.sync(artClock); UI.renderAll();
+                            }""", {"boss": boss, "variant": variant})
+                            page.wait_for_function("[...document.querySelectorAll('#monster img')].every(img => img.complete && img.naturalWidth > 0)")
+                            assert page.locator("#monster").get_attribute("data-variant") == str(variant)
+                            assert page.evaluate("$('monster').classList.contains('boss')") is boss
+                            expected_asset = f"enemy-{variant}{'-boss' if boss else ''}.svg"
+                            enemy_loaded = page.evaluate(r"""async expected => {
+                                const background = getComputedStyle($('monster')).backgroundImage;
+                                if (!background.includes(expected)) return false;
+                                const url = background.match(/url\([\"']?([^\"')]+)[\"']?\)/)?.[1];
+                                if (!url) return false;
+                                const image = new Image(); image.src = url;
+                                try { await image.decode(); return image.naturalWidth > 0; } catch { return false; }
+                            }""", expected_asset)
+                            assert enemy_loaded, f"enemy artwork did not load: {expected_asset} at {width}x{height}"
+                            contained_art()
+                        for animation in ["heroAttack", "celebrate", "levelUp"]:
+                            page.evaluate(f"VFX.{animation}()")
+                            for _ in range(5):
+                                contained_art()
+                                page.wait_for_timeout(60)
+                            page.evaluate("VFX.reset()")
+                    checked.append(f"{width}x{height}")
+            return {"viewports": checked, "enemyVariantsPerViewport": 10, "animationSamplesPerViewport": 30, "teacherAndEnemyInsideClippingAncestors": True}
+
+        def reduced_motion_preference():
+            with fresh(reduced_motion=True) as (_, page, _):
+                page.evaluate("window.motionClock = Date.now(); Date.now = () => motionClock; VFX.reset()")
+                before = page.evaluate("getComputedStyle($('monster')).transform")
+                result = page.evaluate("""() => {
+                    Combat.attack(20,20,motionClock);
+                    VFX.celebrate(); VFX.levelUp();
+                    return {enemyTransform:getComputedStyle($('monster')).transform,
+                        animated:[...document.querySelectorAll('#teacher-hero, #teacher-sprite, #monster, #attack-projectile')]
+                            .filter(element => getComputedStyle(element).animationName !== 'none').map(element => element.id)};
+                }""")
+                assert result["enemyTransform"] == before, "reduced-motion attacks still transform the enemy"
+                assert not result["animated"], "reduced-motion elements still animate: " + ", ".join(result["animated"])
+                assert page.evaluate("Data.state.totalClicks") == 1, "reduced-motion preference disabled gameplay"
+                return {"animationsDisabled": True, "enemyHitTransformDisabled": True, "attackStillWorks": True}
+
         def glance_summaries_follow_progress():
             with fresh() as (_, page, _):
                 page.evaluate("window.summaryClock = Date.now(); Date.now = () => summaryClock")
@@ -537,7 +744,7 @@ def main():
             directory = Path(args.screenshots)
             directory.mkdir(parents=True, exist_ok=True)
             images = []
-            for width, height in [(390, 844), (390, 780), (1440, 900), (320, 568), (844, 320)]:
+            for width, height in [(390, 844), (390, 780), (1440, 900), (320, 568), (320, 601), (375, 667), (430, 932), (568, 320), (844, 320)]:
                 with fresh({"width": width, "height": height}) as (_, page, _):
                     # Stop time at the current frame so an image is a stable
                     # layout artifact rather than a capture of random combat.
@@ -581,9 +788,14 @@ def main():
             ("two corrupt tabs recover and hand off ownership after repair", repaired_corrupt_tabs),
             ("untouched game starts automatic combat, XP, and leveling", idle_without_input),
             ("title, companions, relics, and achievements omit personal names", anonymous_game_labels),
+            ("upgrades, companions, distinct relics, prestige, and valid backup round trip", upgrades_relics_prestige_backup),
             ("legacy save migrates and XP survives reload without bonuses, then resets", migrated_xp_reload_reset),
+            ("version 2 earned save migrates without changing currencies or game features", old_saved_progress),
             ("portrait, short landscape, and desktop controls", layouts),
             ("backup and import dialogs remain usable on compact screens", dialogs_on_compact_screens),
+            ("teacher animates automatic and manual attacks, defeat, level-up, and cleans up", teacher_animation_behavior),
+            ("teacher and all enemy variants remain visible throughout mobile animations", teacher_enemy_layouts),
+            ("reduced-motion preference stops visual motion while attacks work", reduced_motion_preference),
             ("damage, HP, stage, and skill summaries follow game progress", glance_summaries_follow_progress),
             ("initial and progressed screenshots for visual review", screenshots),
         ]:

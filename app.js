@@ -205,6 +205,7 @@ const VFX = {
     height: 0,
     ptc: [],
     hitTimer: null,
+    actorTimers: new Map(),
 
     init() {
         this.ctx = this.cvs.getContext('2d');
@@ -235,12 +236,40 @@ const VFX = {
         return { x: clientX - rect.left, y: clientY - rect.top };
     },
 
-    center() { return { x: this.width / 2, y: this.height / 2 }; },
+    center() {
+        const rect = $('monster').getBoundingClientRect();
+        return this.point(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    },
+
+    animate(id, name, duration) {
+        const actor = $(id);
+        if (!actor) return;
+        const key = id + ':' + name;
+        clearTimeout(this.actorTimers.get(key));
+        actor.classList.remove(name);
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        void actor.offsetWidth;
+        actor.classList.add(name);
+        this.actorTimers.set(key, setTimeout(() => {
+            actor.classList.remove(name);
+            this.actorTimers.delete(key);
+        }, duration));
+    },
+
+    heroAttack() {
+        this.animate('teacher-hero', 'attacking', 360);
+        this.animate('attack-projectile', 'flying', 360);
+    },
+
+    celebrate() { this.animate('teacher-hero', 'celebrate', 600); },
+    levelUp() { this.animate('teacher-hero', 'level-up', 900); },
 
     hit() {
+        this.heroAttack();
         const monster = $('monster');
         clearTimeout(this.hitTimer);
         monster.classList.remove('hit');
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
         void monster.offsetWidth;
         monster.classList.add('hit');
         this.hitTimer = setTimeout(() => monster.classList.remove('hit'), 100);
@@ -248,6 +277,10 @@ const VFX = {
 
     reset() {
         clearTimeout(this.hitTimer);
+        for (const timer of this.actorTimers.values()) clearTimeout(timer);
+        this.actorTimers.clear();
+        if ($('teacher-hero')) $('teacher-hero').classList.remove('attacking', 'celebrate', 'level-up');
+        if ($('attack-projectile')) $('attack-projectile').classList.remove('flying');
         $('monster').classList.remove('hit');
         $('monster').style.transform = '';
         this.ptc.length = 0;
@@ -309,7 +342,8 @@ const UI = {
         const maximumLevel = state.player.level >= GameLimits.MAX_LEVEL;
         const requiredXP = Simulation.xpForLevel(state.player.level);
         $('player-level').textContent = 'Lv.' + fNum(state.player.level);
-        $('player-level').setAttribute('aria-label', '플레이어 레벨 ' + fNum(state.player.level));
+        if ($('hero-level')) $('hero-level').textContent = 'Lv.' + fNum(state.player.level);
+        $('player-level').setAttribute('aria-label', '선생님 레벨 ' + fNum(state.player.level));
         $('player-xp').textContent = maximumLevel ? '최고 레벨 달성' :
             fNum(state.player.xp) + ' / ' + fNum(requiredXP) + ' EXP';
         $('player-xp-fill').style.width = (maximumLevel ? 100 : state.player.xp / requiredXP * 100) + '%';
@@ -325,17 +359,17 @@ const UI = {
         if ($('hud-auto')) $('hud-auto').textContent = fNum(Logic.getA_Dmg());
         if ($('hud-click')) $('hud-click').textContent = fNum(Logic.getC_Dmg());
         if ($('day-progress-text')) $('day-progress-text').textContent = state.min >= 40
-            ? '퇴근 목표 달성' : fNum(state.min) + ' / 40분';
+            ? '오늘의 모험 달성' : fNum(state.min) + ' / 40분';
         if ($('day-progress-fill')) $('day-progress-fill').style.width = Math.min(100, state.min / 40 * 100) + '%';
         $('preview-token').textContent = fNum(state.min);
         $('btn-gacha').disabled = !Data.canWrite || state.gem < 10 || state.relic.every(Boolean);
-        $('btn-gacha').setAttribute('aria-label', state.relic.every(Boolean) ? '교보재 수집 완료' : '보석 10개로 교보재 뽑기');
+        $('btn-gacha').setAttribute('aria-label', state.relic.every(Boolean) ? '유물 수집 완료' : '보석 10개로 유물 뽑기');
         const descriptors = [
-            ['click', state.stat.c, Logic.getC_Dmg(), '추가 공격'],
-            ['auto', state.stat.a, Logic.getA_Dmg(), '자동 처리'],
+            ['click', state.stat.c, Logic.getC_Dmg(), '분필 마법'],
+            ['auto', state.stat.a, Logic.getA_Dmg(), '자동 공격'],
             ['crit', state.stat.crit, state.stat.crit.p, '치명타'],
-            ['comp1', state.comp.na, state.comp.na.p, '체력 코치'],
-            ['comp2', state.comp.yu, state.comp.yu.p, '응원 동료']
+            ['comp1', state.comp.na, state.comp.na.p, '체육 요정'],
+            ['comp2', state.comp.yu, state.comp.yu.p, '응원 요정']
         ];
         for (const [name, entry, value, title] of descriptors) {
             $('lv-' + name).textContent = fNum(entry.l);
@@ -367,9 +401,9 @@ const UI = {
         if ($('hp-text')) $('hp-text').textContent = fNum(state.mob.hp) + ' / ' + fNum(maxHP);
         if ($('work-stage')) $('work-stage').textContent = fNum(state.kills + 1);
         if ($('work-status')) $('work-status').textContent = !Data.canWrite || GameApp.recoveryPending || document.hidden
-            ? '일시 정지' : state.mob.boss ? '보스 결재' : '자동 처리 중';
-        if ($('next-boss')) $('next-boss').textContent = state.mob.boss ? '보스 결재 중'
-            : state.kills >= GameLimits.MAX_COUNTER ? '최고 업무 단계' : (100 - state.kills % 100) + '개 처리하면 보스';
+            ? '일시 정지' : state.mob.boss ? '보스 전투 중' : '자동 전투 중';
+        if ($('next-boss')) $('next-boss').textContent = state.mob.boss ? '보스를 물리쳐 보석을 모으세요'
+            : state.kills >= GameLimits.MAX_COUNTER ? '최고 모험 단계' : (100 - state.kills % 100) + '마리 뒤 보스 등장';
         $('battle-view').classList.toggle('boss-mode', state.mob.boss);
         $('monster').classList.toggle('boss', state.mob.boss);
         $('battle-view').classList.toggle('night-mode', now < state.buff.nightUntil);
@@ -377,6 +411,7 @@ const UI = {
         const index = state.mob.boss
             ? Math.min(Math.max(0, Math.floor(state.kills / 100) - 1), names.length - 1)
             : state.kills % names.length;
+        $('monster').dataset.variant = String(index);
         $('mob-name').textContent = names[index];
         $('battle-view').setAttribute('aria-label', names[index] + ' 공격. 남은 체력 ' + Math.round(ratio * 100) + '퍼센트.');
         const timer = $('boss-timer-wrap');
@@ -436,7 +471,7 @@ const UI = {
         if (Math.floor(now / 1000) === this.lastSkillSecond) return;
         this.lastSkillSecond = Math.floor(now / 1000);
         for (const [name, number, title] of [
-            ['rush', 1, '집중 처리'], ['night', 2, '몰입 모드']
+            ['rush', 1, '반짝 분필'], ['night', 2, '칭찬의 마법']
         ]) {
             const duration = Combat.sk[name].cd * 1000;
             const remaining = Math.max(0, Data.state.skill[name] + duration - now);
