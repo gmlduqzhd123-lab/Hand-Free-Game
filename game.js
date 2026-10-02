@@ -6,17 +6,21 @@ const Simulation = {
     names: ['나이스 결재', '협조전 처리', '학급 일지', '체온 측정표', '조퇴 사유서'],
     bosses: ['6학년 PAPS 측정', '수영부 예산 품의', '보성-강진 연수', '200명 참관 공개수업', '종합 세트 AI 보고서'],
 
+    xpForLevel(level) { return GameLimits.xpForLevel(level); },
+    getPlayerMultiplier(state) { return 1 + (state.player.level - 1) * 0.05; },
     getMultiplier(state) { return GameLimits.add(1, GameLimits.multiply(state.token, 0.1)); },
     getMilestoneMultiplier(level) { return level >= 100 ? 16 : level >= 50 ? 8 : level >= 25 ? 4 : level >= 10 ? 2 : 1; },
     getClickDamage(state) {
         let damage = GameLimits.multiply(state.stat.c.p, this.getMilestoneMultiplier(state.stat.c.l));
         damage = GameLimits.multiply(damage, state.relic[2] ? 1.5 : 1);
         damage = GameLimits.multiply(damage, GameLimits.add(1, state.comp.yu.p / 100));
-        return Math.floor(GameLimits.multiply(damage, this.getMultiplier(state)));
+        damage = GameLimits.multiply(damage, this.getMultiplier(state));
+        return Math.floor(GameLimits.multiply(damage, this.getPlayerMultiplier(state)));
     },
     getAutoDamage(state) {
         const base = GameLimits.add(GameLimits.multiply(state.stat.a.p, this.getMilestoneMultiplier(state.stat.a.l)), state.comp.na.p);
-        return Math.floor(GameLimits.multiply(GameLimits.multiply(base, state.relic[0] ? 1.5 : 1), this.getMultiplier(state)));
+        const damage = GameLimits.multiply(GameLimits.multiply(base, state.relic[0] ? 1.5 : 1), this.getMultiplier(state));
+        return Math.floor(GameLimits.multiply(damage, this.getPlayerMultiplier(state)));
     },
     calcMobStats(state) {
         const boss = state.mob.boss;
@@ -35,6 +39,7 @@ const Simulation = {
         }
         if (!state.mob.boss) state.mob.deadline = 0;
         state.autoRemainder = Number.isFinite(state.autoRemainder) && state.autoRemainder >= 0 && state.autoRemainder < 1 ? state.autoRemainder : 0;
+        state.xpRemainder = Number.isFinite(state.xpRemainder) && state.xpRemainder >= 0 && state.xpRemainder < 1 ? state.xpRemainder : 0;
         return state;
     },
     spawn(state, forceBoss = null, now = Date.now()) {
@@ -44,7 +49,29 @@ const Simulation = {
         state.mob.deadline = state.mob.boss ? Math.ceil(now + this.bossDuration(state)) : 0;
     },
     events() {
-        return { gold: 0, goldGross: 0, gems: 0, kills: 0, bossKills: 0, bossExpired: 0, bossSpawned: 0, autoHits: 0, rushHits: 0, damage: 0, lastDamage: 0, lastReward: 0, critical: false, reachedFinish: false, elapsedMs: 0, capped: false };
+        return { gold: 0, goldGross: 0, gems: 0, kills: 0, bossKills: 0, bossExpired: 0, bossSpawned: 0, autoHits: 0, rushHits: 0, damage: 0, lastDamage: 0, lastReward: 0, critical: false, reachedFinish: false, elapsedMs: 0, capped: false, xpGained: 0, levelsGained: 0 };
+    },
+    gainXP(state, amount, events) {
+        let remaining = Math.max(0, Math.floor(GameLimits.finite(amount)));
+        while (remaining > 0 && state.player.level < GameLimits.MAX_LEVEL) {
+            const needed = this.xpForLevel(state.player.level) - state.player.xp;
+            const gained = Math.min(remaining, needed);
+            state.player.xp += gained;
+            remaining -= gained;
+            events.xpGained = GameLimits.add(events.xpGained, gained);
+            if (state.player.xp === this.xpForLevel(state.player.level)) {
+                state.player.level += 1;
+                state.player.xp = 0;
+                events.levelsGained += 1;
+            }
+        }
+        if (state.player.level === GameLimits.MAX_LEVEL) state.player.xp = 0;
+    },
+    clockRemainder(previous, elapsedMs) {
+        // Keep fractional frames at full precision and only snap the second
+        // boundary. Rounding every frame would accumulate at odd frame rates.
+        const remainder = (previous * 1000 + elapsedMs) % 1000;
+        return remainder < 0.000001 || 1000 - remainder < 0.000001 ? 0 : remainder / 1000;
     },
     expireBoss(state, events, now) {
         if (!state.mob.boss || state.mob.deadline > now) return false;
@@ -104,10 +131,12 @@ const Simulation = {
         this.reconcile(state, start);
         this.expireBoss(state, events, start);
 
-        const autoDamage = this.getAutoDamage(state);
-        const clickDamage = this.getClickDamage(state);
+        let autoDamage = this.getAutoDamage(state);
+        let clickDamage = this.getClickDamage(state);
         const remainderMs = state.autoRemainder * 1000;
+        const xpRemainderMs = state.xpRemainder * 1000;
         let nextAuto = autoDamage > 0 ? start + 1000 - remainderMs : Infinity;
+        let nextXP = state.player.level < GameLimits.MAX_LEVEL ? start + 1000 - xpRemainderMs : Infinity;
         const rushStarted = state.skill.rush;
         let nextRush = !offline && state.buff.rushUntil > start
             ? rushStarted + (Math.floor((start - rushStarted) / 80) + 1) * 80 : Infinity;
@@ -116,18 +145,29 @@ const Simulation = {
 
         while (true) {
             const deadline = state.mob.boss ? state.mob.deadline : Infinity;
-            const next = Math.min(nextAuto, nextRush, deadline);
+            const next = Math.min(nextAuto, nextRush, nextXP, deadline);
             if (next > end + 0.000001 || !Number.isFinite(next)) break;
             // A wall-clock deadline wins ties with an attack, in visible and away play.
             if (deadline === next) {
                 this.expireBoss(state, events, next);
                 continue;
             }
+            // A level earned at this second boosts attacks at the same timestamp.
+            if (nextXP === next) {
+                const previousLevel = state.player.level;
+                this.gainXP(state, GameLimits.XP_PER_SECOND, events);
+                nextXP = state.player.level < GameLimits.MAX_LEVEL ? nextXP + 1000 : Infinity;
+                if (state.player.level !== previousLevel) {
+                    autoDamage = this.getAutoDamage(state);
+                    clickDamage = this.getClickDamage(state);
+                }
+                continue;
+            }
             if (nextAuto === next) {
                 // Skip consecutive nonlethal automatic hits in one operation. This bounds
                 // catch-up work even when a large enemy takes thousands of seconds.
-                const boundary = Math.min(end, nextRush, deadline);
-                const exclusive = boundary === nextRush || boundary === deadline;
+                const boundary = Math.min(end, nextRush, nextXP, deadline);
+                const exclusive = boundary === nextRush || boundary === nextXP || boundary === deadline;
                 const available = Math.max(0, Math.floor((boundary - nextAuto - (exclusive ? 0.000001 : 0)) / 1000) + 1);
                 const needed = Math.ceil(state.mob.hp / autoDamage);
                 const skipped = Math.min(available, Math.max(0, needed - 1));
@@ -153,7 +193,8 @@ const Simulation = {
 
         if (offline) state.gold = GameLimits.add(initialGold, Math.floor(GameLimits.multiply(events.goldGross, 0.7)));
         events.gold = Math.max(0, state.gold - initialGold);
-        state.autoRemainder = Math.max(0, Math.min(0.999999999, ((remainderMs + end - start) % 1000) / 1000));
+        state.autoRemainder = this.clockRemainder(state.autoRemainder, end - start);
+        state.xpRemainder = this.clockRemainder(state.xpRemainder, end - start);
         // A capped away interval is consumed once. Timers still expire at the real time.
         this.expireBoss(state, events, finish);
         if (state.buff.rushUntil <= finish) state.buff.rushUntil = 0;
@@ -170,7 +211,7 @@ const Ach = {
         { id: 1, title: '퇴근 예행 연습', desc: '16:10 보스 처치', condition: s => s.bossKills >= 1, rwd: 20 },
         { id: 2, title: '광란의 손가락', desc: '화면 500회 터치', condition: s => s.totalClicks >= 500, rwd: 15 },
         { id: 3, title: '부장님의 인정', desc: '골드 100만 달성', condition: s => s.gold >= 1000000, rwd: 30 },
-        { id: 4, title: '마스터 엽쌤', desc: '타건력 Lv 50 달성', condition: s => s.stat.c.l >= 50, rwd: 50 }
+        { id: 4, title: '업무의 달인', desc: '타건력 Lv 50 달성', condition: s => s.stat.c.l >= 50, rwd: 50 }
     ],
     evaluate(state) {
         let changed = false;
@@ -278,13 +319,14 @@ const Logic = {
     notify(events, offline = false) {
         const messages = [];
         if (offline) {
-            if (events.gold > 0 || events.kills > 0) messages.push(`⏰ 자리 비움 결재 완료!<br>💰${typeof fNum === 'function' ? fNum(events.gold) : events.gold} · ${events.kills}개 파쇄${events.capped ? ' (최대 24시간)' : ''}`);
+            if (events.gold > 0 || events.kills > 0 || events.xpGained > 0) messages.push(`⏰ 자리 비움 성장 완료!<br>EXP +${typeof fNum === 'function' ? fNum(events.xpGained) : events.xpGained} · 💰${typeof fNum === 'function' ? fNum(events.gold) : events.gold} · ${events.kills}개 파쇄${events.capped ? ' (최대 24시간)' : ''}`);
             if (events.bossExpired > 0) messages.push('❌ 자리 비움 중 보스 기한이 만료되어 서류가 반려됐습니다.');
         } else {
             if (events.bossExpired > 0) { this.sound('err'); messages.push('❌ 기한 만료! 서류 반려됨.'); }
             if (events.bossKills > 0) messages.push(`🎉 보스 격파! 💎${typeof fNum === 'function' ? fNum(events.gems) : events.gems} 획득`);
             if (events.bossSpawned > 0 && typeof Sys !== 'undefined' && Sys.shake) Sys.shake('hard');
         }
+        if (events.levelsGained > 0) messages.push(`✨ Lv ${Data.state.player.level} 달성!${events.levelsGained > 1 ? ` (+${events.levelsGained} 레벨)` : ''} 공격력 +${Math.round((Data.state.player.level - 1) * 5)}%`);
         if (events.reachedFinish) messages.push('🎉 16:40 달성! 칼퇴 확정! 이후에도 업무를 계속하거나 내일 출근할 수 있습니다.');
         if (messages.length) this.toast(messages.join('<br>'));
     },
@@ -387,6 +429,8 @@ const Logic = {
         candidate.achReady = previous.achReady.slice();
         candidate.totalClicks = previous.totalClicks;
         candidate.bossKills = previous.bossKills;
+        candidate.player = { ...previous.player };
+        candidate.xpRemainder = previous.xpRemainder;
         candidate.skill = { ...previous.skill };
         candidate.sound = previous.sound;
         candidate.revision = previous.revision;
@@ -403,6 +447,8 @@ const Combat = {
     sk: { rush: { cd: 60, d: 5 }, night: { cd: 90, d: 10 } },
     attack(x, y, now = Date.now()) {
         if (!Logic.canAct()) return false;
+        // Settle passive levels before measuring this manual attack's damage.
+        Logic.catchUp(now);
         Data.state.totalClicks = Math.min(GameLimits.MAX_COUNTER, Data.state.totalClicks + 1);
         return Logic.hit(Logic.getC_Dmg(), x, y, false, now);
     },

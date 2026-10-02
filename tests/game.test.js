@@ -84,7 +84,7 @@ test("a fresh state and nested legacy defaults never share mutable objects", asy
     migrated.comp.na.p = 99;
     migrated.stat.a.p = 77;
     assert.equal(h.Data.def.comp.na.p, 0);
-    assert.equal(h.Data.def.stat.a.p, 0);
+    assert.equal(h.Data.def.stat.a.p, second.stat.a.p);
     assert.notEqual(migrated.comp, second.comp);
 });
 
@@ -119,7 +119,14 @@ test("malformed backups cannot replace a valid live state or persisted save", as
         state => { delete state.comp.na.c; },
         state => { state.relic = [false]; },
         state => { state.ach[0] = "false"; },
-        state => { state.skill.rush = -1; }
+        state => { state.skill.rush = -1; },
+        state => { state.player = null; },
+        state => { delete state.player.xp; },
+        state => { state.player.level = 0; },
+        state => { state.player.level = 1.5; },
+        state => { state.player.xp = -1; },
+        state => { state.player.xp = 20; },
+        state => { state.xpRemainder = 1; }
     ]) {
         const state = plain(h.Data.createDefault());
         change(state);
@@ -264,6 +271,7 @@ test("prestige resets legacy fallback upgrades while preserving earned progress"
     h.Data.state.token = 7;
     h.Data.state.relic[0] = true;
     h.Data.state.totalClicks = 500;
+    h.Data.state.player = { level: 6, xp: 7 };
     h.Ach.evaluate(h.Data.state);
     assert.equal(h.Logic.prestige(), true);
     assert.equal(h.Data.state.comp.na.p, 0);
@@ -275,6 +283,7 @@ test("prestige resets legacy fallback upgrades while preserving earned progress"
     assert.equal(h.Data.state.relic[0], true);
     assert.equal(h.Data.state.totalClicks, 500);
     assert.equal(h.Data.state.achReady[2], true);
+    assert.deepEqual(plain(h.Data.state.player), { level: 6, xp: 7 });
     assert.equal(h.Data.def.comp.na.p, 0);
     h.Data.state.min = 1;
     h.Data.state.token = 1e12;
@@ -313,10 +322,13 @@ test("5 fps and a ten-second pause preserve the same automatic combat time", () 
     for (let i = 0; i < 50; i++) h.Simulation.simulate(lowFps, NOW + i * 200, NOW + (i + 1) * 200);
     for (let i = 0; i < 10; i++) h.Simulation.simulate(oncePerSecond, NOW + i * 1000, NOW + (i + 1) * 1000);
     h.Simulation.simulate(paused, NOW, NOW + 10_000);
-    assert.equal(startingHp - lowFps.mob.hp, 1000);
+    assert.ok(startingHp - lowFps.mob.hp > 1000, "passive levels did not increase automatic attack damage");
     assert.equal(lowFps.mob.hp, oncePerSecond.mob.hp);
     assert.equal(lowFps.mob.hp, paused.mob.hp);
     assert.equal(lowFps.kills, 50);
+    assert.deepEqual(plain(lowFps.player), { level: 3, xp: 0 });
+    assert.deepEqual(plain(lowFps.player), plain(oncePerSecond.player));
+    assert.deepEqual(plain(lowFps.player), plain(paused.player));
 });
 
 test("offline gold is 70% of the same changing-stage automatic combat rewards", () => {
@@ -336,6 +348,9 @@ test("offline gold is 70% of the same changing-stage automatic combat rewards", 
     assert.equal(offline.mob.hp, online.mob.hp);
     assert.equal(offline.gem, online.gem);
     assert.equal(offlineResult.kills, onlineResult.kills);
+    assert.deepEqual(plain(offline.player), plain(online.player));
+    assert.equal(offlineResult.xpGained, 600);
+    assert.equal(onlineResult.xpGained, 600);
 });
 
 test("a boss appearing does not satisfy the boss-kill achievement", () => {
@@ -363,6 +378,7 @@ test("boss deadlines advance through slow frames and expire once", () => {
     const state = h.Data.createDefault();
     state.kills = 100;
     state.min = 10;
+    state.stat.a = { l: 0, p: 0, c: 100 };
     h.Simulation.spawn(state, true, NOW);
     h.Simulation.simulate(state, NOW, NOW + 5000);
     assert.equal(state.mob.boss, true);
@@ -517,4 +533,219 @@ test("successful late upgrades clamp growing costs and stop charging at maximum"
     assert.equal(h.Logic.upgrade("click"), false);
     assert.equal(h.Data.state.gold, 1e100);
     assert.deepEqual(plain(h.Data.state.stat.c), maximum);
+});
+
+test("opening a fresh game starts automatic combat and gains XP without an input", () => {
+    const h = harness();
+    const state = h.Data.createDefault();
+    assert.equal(state.version, 4);
+    assert.deepEqual(plain(state.player), { level: 1, xp: 0 });
+    assert.equal(state.xpRemainder, 0);
+    assert.deepEqual(plain(state.stat.a), { l: 1, p: 10, c: 100 });
+    const before = h.Simulation.simulate(state, NOW, NOW + 999);
+    assert.equal(before.xpGained, 0);
+    assert.equal(state.player.xp, 0);
+    assert.equal(state.mob.hp, 100);
+    const firstTick = h.Simulation.simulate(state, NOW + 999, NOW + 1000);
+    assert.equal(firstTick.xpGained, 5);
+    assert.equal(firstTick.autoHits, 1);
+    assert.equal(state.player.xp, 5);
+    assert.equal(state.mob.hp, 90);
+    const untilLevelTwo = h.Simulation.simulate(state, NOW + 1000, NOW + 4000);
+    assert.equal(untilLevelTwo.levelsGained, 1);
+    assert.deepEqual(plain(state.player), { level: 2, xp: 0 });
+    assert.equal(state.totalClicks, 0);
+});
+
+test("version 3 progress migrates in place and receives a free starter only when auto is empty", async () => {
+    const initial = harness();
+    const legacy = plain(initial.Data.createDefault());
+    legacy.version = 3;
+    delete legacy.player;
+    delete legacy.xpRemainder;
+    legacy.stat.a = { l: 0, p: 0, c: 321 };
+    legacy.gold = 777;
+    legacy.kills = 3;
+    legacy.mob.hp = 40;
+    legacy.comp.na = { l: 5, p: 125, c: 30000 };
+    legacy.ach[0] = legacy.achReady[0] = true;
+    const raw = JSON.stringify(legacy);
+    const h = harness({ raw });
+    await h.Data.ready;
+    assert.equal(h.Data.key, SAVE_KEY);
+    assert.equal(h.Data.recoveryRaw, null);
+    assert.equal(h.Data.state.version, 4);
+    assert.deepEqual(plain(h.Data.state.player), { level: 1, xp: 0 });
+    assert.deepEqual(plain(h.Data.state.stat.a), { l: 1, p: 10, c: 321 });
+    assert.equal(h.Data.state.gold, 777);
+    assert.equal(h.Data.state.kills, 3);
+    assert.equal(h.Data.state.mob.hp, 40);
+    assert.deepEqual(plain(h.Data.state.comp.na), legacy.comp.na);
+    assert.equal(h.Data.state.ach[0], true);
+    assert.equal(h.Data.state.totalClicks, 0);
+    assert.equal(h.storage.get(SAVE_KEY), raw, "migration overwrote bytes before a committed save");
+    assert.equal(h.Data.save(), true);
+    assert.equal(JSON.parse(h.storage.get(SAVE_KEY)).version, 4);
+    for (const upgrade of [{ l: 4, p: 99, c: 999 }, { l: 1, p: 0, c: 100 }, { l: 0, p: 5, c: 100 }]) {
+        legacy.stat.a = upgrade;
+        assert.deepEqual(plain(initial.Data.normalize(legacy).stat.a), upgrade);
+    }
+});
+
+test("passive XP and level-enhanced combat are independent of frame rate and chunk boundaries", () => {
+    const h = harness();
+    const single = autoState(h);
+    const lowFps = plain(single);
+    const highFps = [60, 120, 144].map(fps => ({ fps, state: plain(single) }));
+    const mixed = plain(single);
+    h.Simulation.simulate(single, NOW, NOW + 10_250);
+    for (let elapsed = 0; elapsed < 10_250; elapsed += 200) {
+        h.Simulation.simulate(lowFps, NOW + elapsed, NOW + Math.min(10_250, elapsed + 200));
+    }
+    for (const { fps, state } of highFps) {
+        for (let frame = 0; frame < fps * 10.25; frame++) {
+            h.Simulation.simulate(state, NOW + frame * (1000 / fps), NOW + (frame + 1) * (1000 / fps));
+        }
+    }
+    const chunks = [1, 17, 73, 2047, 499, 3001, 12, 777];
+    let elapsed = 0;
+    for (let index = 0; elapsed < 10_250; index++) {
+        const next = Math.min(10_250, elapsed + chunks[index % chunks.length]);
+        h.Simulation.simulate(mixed, NOW + elapsed, NOW + next);
+        elapsed = next;
+    }
+    assert.deepEqual(plain(single.player), { level: 3, xp: 0 });
+    for (const state of [lowFps, ...highFps.map(item => item.state), mixed]) {
+        assert.deepEqual(plain(state.player), plain(single.player));
+        assert.equal(state.mob.hp, single.mob.hp);
+        assert.equal(state.kills, single.kills);
+        assert.equal(state.gold, single.gold);
+        assert.ok(Math.abs(state.xpRemainder - single.xpRemainder) < 0.000001);
+    }
+    assert.ok(Math.abs(single.xpRemainder - 0.25) < 0.000001);
+});
+
+test("XP fractional time survives a save and reload without awarding an entry bonus", async () => {
+    const h = harness();
+    await h.Data.ready;
+    h.Simulation.simulate(h.Data.state, NOW, NOW + 3750);
+    h.setNow(NOW + 3750);
+    assert.deepEqual(plain(h.Data.state.player), { level: 1, xp: 15 });
+    assert.equal(h.Data.state.xpRemainder, 0.75);
+    assert.equal(h.Data.save(), true);
+    const raw = h.storage.get(SAVE_KEY);
+    const reloaded = harness({ raw });
+    reloaded.setNow(NOW + 3750);
+    reloaded.Data.load();
+    await reloaded.Data.ready;
+    assert.deepEqual(plain(reloaded.Data.state.player), { level: 1, xp: 15 });
+    assert.equal(reloaded.Data.state.xpRemainder, 0.75);
+    const entry = reloaded.Simulation.simulate(reloaded.Data.state, NOW + 3750, NOW + 3750);
+    assert.equal(entry.xpGained, 0);
+    assert.deepEqual(plain(reloaded.Data.state.player), { level: 1, xp: 15 });
+    reloaded.Simulation.simulate(reloaded.Data.state, NOW + 3750, NOW + 3999);
+    assert.equal(reloaded.Data.state.player.level, 1);
+    reloaded.Simulation.simulate(reloaded.Data.state, NOW + 3999, NOW + 4000);
+    assert.deepEqual(plain(reloaded.Data.state.player), { level: 2, xp: 0 });
+});
+
+test("away XP is full rate, capped at 24 hours, and cannot be paid twice", () => {
+    const h = harness();
+    const oneDay = h.Data.createDefault();
+    const twoDays = plain(oneDay);
+    const limit = 24 * 60 * 60 * 1000;
+    const oneDayEvents = h.Simulation.simulate(oneDay, NOW, NOW + limit, { offline: true });
+    const twoDayEvents = h.Simulation.simulate(twoDays, NOW, NOW + limit * 2, { offline: true });
+    assert.equal(oneDayEvents.xpGained, 432000);
+    assert.equal(twoDayEvents.xpGained, 432000);
+    assert.equal(twoDayEvents.capped, true);
+    assert.deepEqual(plain(twoDays.player), plain(oneDay.player));
+    assert.deepEqual(plain(twoDays.player), { level: 293, xp: 1300 });
+    assert.equal(twoDays.lastActiveAt, NOW + limit * 2);
+    const repeat = h.Simulation.simulate(twoDays, twoDays.lastActiveAt, NOW + limit * 2, { offline: true });
+    assert.equal(repeat.xpGained, 0);
+    assert.deepEqual(plain(twoDays.player), { level: 293, xp: 1300 });
+    h.Simulation.simulate(twoDays, twoDays.lastActiveAt, NOW + limit * 2 + 1000);
+    assert.deepEqual(plain(twoDays.player), { level: 293, xp: 1305 });
+});
+
+test("player levels increase both damage types and stop cleanly at the finite cap", () => {
+    const h = harness();
+    const state = h.Data.createDefault();
+    assert.equal(h.Simulation.getClickDamage(state), 10);
+    assert.equal(h.Simulation.getAutoDamage(state), 10);
+    state.player.level = 21;
+    assert.equal(h.Simulation.getClickDamage(state), 20);
+    assert.equal(h.Simulation.getAutoDamage(state), 20);
+    state.player = { level: 999, xp: 9995 };
+    const result = h.Simulation.simulate(state, NOW, NOW + 1000);
+    assert.equal(result.levelsGained, 1);
+    assert.deepEqual(plain(state.player), { level: 1000, xp: 0 });
+    h.Simulation.simulate(state, NOW + 1000, NOW + 60_000);
+    assert.deepEqual(plain(state.player), { level: 1000, xp: 0 });
+    assert.ok(Number.isFinite(h.Simulation.getClickDamage(state)));
+    assert.ok(Number.isFinite(h.Simulation.getAutoDamage(state)));
+});
+
+test("a full reset clears XP and restores automatic play, while backup import keeps earned levels", async () => {
+    const h = harness();
+    await h.Data.ready;
+    h.Data.state.player = { level: 9, xp: 17 };
+    h.Data.state.xpRemainder = 0.75;
+    h.Data.state.gold = 777;
+    assert.equal(h.Data.save(), true);
+    const backup = plain(h.Data.state);
+    assert.equal(h.Data.reset().ok, true);
+    assert.deepEqual(plain(h.Data.state.player), { level: 1, xp: 0 });
+    assert.equal(h.Data.state.xpRemainder, 0);
+    assert.equal(h.Simulation.getAutoDamage(h.Data.state), 10);
+    assert.equal(h.Data.import(backup).ok, true);
+    assert.deepEqual(plain(h.Data.state.player), { level: 9, xp: 17 });
+    assert.equal(h.Data.state.xpRemainder, 0.75);
+    assert.equal(h.Data.state.gold, 777);
+    assert.equal(h.Data.state.lastActiveAt, NOW);
+    assert.equal(h.Simulation.simulate(h.Data.state, NOW, NOW).xpGained, 0);
+});
+
+test("a manual attack at a passive level boundary uses the newly earned damage bonus", async () => {
+    const h = harness();
+    await h.Data.ready;
+    h.Data.state.kills = 50;
+    h.Data.state.stat.c.p = 100;
+    h.Data.state.stat.a = { l: 0, p: 0, c: 100 };
+    h.Data.state.mob.hp = h.Simulation.calcMobStats(h.Data.state).hp;
+    const initialHp = h.Data.state.mob.hp;
+    h.setNow(NOW + 4000);
+    const hit = h.Combat.attack(30, 40, NOW + 4000);
+    assert.equal(hit.damage, 105);
+    assert.deepEqual(plain(h.Data.state.player), { level: 2, xp: 0 });
+    assert.equal(initialHp - h.Data.state.mob.hp, 105);
+    assert.equal(h.Data.state.totalClicks, 1);
+});
+
+test("a passive level boundary increases the automatic hit on that same second", () => {
+    const h = harness();
+    const state = autoState(h);
+    state.player.xp = 15;
+    const initialHp = state.mob.hp;
+    h.Simulation.simulate(state, NOW, NOW + 1000);
+    assert.deepEqual(plain(state.player), { level: 2, xp: 0 });
+    assert.equal(initialHp - state.mob.hp, 105);
+});
+
+test("odd refresh rates cannot accumulate XP or automatic tick drift over a minute", () => {
+    const h = harness();
+    const expected = autoState(h);
+    h.Simulation.simulate(expected, NOW, NOW + 60_000);
+    assert.deepEqual(plain(expected.player), { level: 7, xp: 30 });
+    for (const fps of [59, 60, 61, 143, 144]) {
+        const state = autoState(h);
+        for (let frame = 0; frame < fps * 60; frame++) {
+            h.Simulation.simulate(state, NOW + frame * (1000 / fps), NOW + (frame + 1) * (1000 / fps));
+        }
+        assert.deepEqual(plain(state.player), plain(expected.player), `XP drifted at ${fps} fps`);
+        assert.equal(state.mob.hp, expected.mob.hp, `automatic damage drifted at ${fps} fps`);
+        assert.equal(state.xpRemainder, 0, `XP phase drifted at ${fps} fps`);
+        assert.equal(state.autoRemainder, 0, `automatic phase drifted at ${fps} fps`);
+    }
 });

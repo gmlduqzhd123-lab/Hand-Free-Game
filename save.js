@@ -1,10 +1,12 @@
 'use strict';
 
-/* Save version 3 keeps the existing storage key and migrates older backups. */
+/* Save version 4 keeps the existing storage key and migrates older backups. */
 const GameLimits = Object.freeze({
     MAX_NUMBER: 1e100,
     MAX_LEVEL: 1000,
     MAX_COUNTER: 1e9,
+    XP_PER_SECOND: 5,
+    xpForLevel(level) { return 20 + (Math.max(1, Math.min(this.MAX_LEVEL, Math.floor(level))) - 1) * 10; },
     finite(value, fallback = 0, maximum = 1e100) {
         if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
         return Math.min(maximum, Math.max(0, value));
@@ -24,7 +26,7 @@ class SaveValidationError extends Error {
 
 const Data = {
     key: 'ys_bugfree_final_v2',
-    version: 3,
+    version: 4,
     state: null,
     def: null,
     canWrite: false,
@@ -47,12 +49,12 @@ const Data = {
 
     createDefault() {
         return {
-            version: 3,
+            version: 4,
             min: 0, gold: 0, gem: 0, token: 0, kills: 0, totalClicks: 0, bossKills: 0,
             mob: { hp: 100, boss: false, deadline: 0 },
             stat: {
                 c: { l: 1, p: 10, c: 50 },
-                a: { l: 0, p: 0, c: 100 },
+                a: { l: 1, p: 10, c: 100 },
                 crit: { l: 0, p: 0, c: 300 }
             },
             comp: { na: { l: 0, p: 0, c: 2000 }, yu: { l: 0, p: 0, c: 5000 } },
@@ -62,6 +64,8 @@ const Data = {
             skill: { rush: 0, night: 0 },
             buff: { rushUntil: 0, nightUntil: 0 },
             autoRemainder: 0,
+            player: { level: 1, xp: 0 },
+            xpRemainder: 0,
             lastActiveAt: Date.now(), savedAt: 0, revision: 0, sound: true
         };
     },
@@ -92,13 +96,20 @@ const Data = {
             .some(field => own(raw, field))) {
             throw new SaveValidationError('게임 저장 데이터가 아닙니다.');
         }
-        if (own(raw, 'version') && ![1, 2, 3].includes(raw.version)) {
+        if (own(raw, 'version') && ![1, 2, 3, 4].includes(raw.version)) {
             throw new SaveValidationError('지원하지 않는 저장 버전입니다.');
         }
         const state = this.createDefault();
-        if (raw.version === 3) {
+        if (raw.version === 3 || raw.version === 4) {
             for (const field of Object.keys(state)) {
+                if (raw.version === 3 && ['player', 'xpRemainder'].includes(field)) continue;
                 if (!own(raw, field)) throw new SaveValidationError(`${field}의 저장 정보가 누락되었습니다.`);
+            }
+            if (raw.version === 4) {
+                const player = object(raw.player, 'player');
+                for (const name of ['level', 'xp']) {
+                    if (!own(player, name)) throw new SaveValidationError(`player.${name}의 저장 정보가 누락되었습니다.`);
+                }
             }
             for (const [field, names] of Object.entries({
                 stat: ['c', 'a', 'crit'], comp: ['na', 'yu'],
@@ -128,7 +139,7 @@ const Data = {
                 if (!own(group, name)) continue;
                 const item = object(group[name], `${field}.${name}`);
                 if (!['l', 'p', 'c'].some(part => own(item, part)) ||
-                    ((strict || raw.version === 3) && !['l', 'p', 'c'].every(part => own(item, part)))) {
+                    ((strict || raw.version === 3 || raw.version === 4) && !['l', 'p', 'c'].every(part => own(item, part)))) {
                     throw new SaveValidationError(`${field}.${name}의 강화 정보가 불완전합니다.`);
                 }
                 for (const part of ['l', 'p', 'c']) {
@@ -138,6 +149,22 @@ const Data = {
                     state[field][name][part] = number(item[part], `${field}.${name}.${part}`, maximum, part === 'l');
                 }
             }
+        }
+        // Existing players who never bought automatic work receive the same free
+        // starter as a new game. Their gold and original upgrade cost are retained.
+        if (state.stat.a.l === 0 && state.stat.a.p === 0) {
+            state.stat.a.l = 1;
+            state.stat.a.p = 10;
+        }
+        if (own(raw, 'player')) {
+            const player = object(raw.player, 'player');
+            if (!own(player, 'level') || !own(player, 'xp')) {
+                throw new SaveValidationError('플레이어 성장 정보가 불완전합니다.');
+            }
+            state.player.level = number(player.level, 'player.level', GameLimits.MAX_LEVEL, true);
+            if (state.player.level < 1) throw new SaveValidationError('플레이어 레벨은 1 이상이어야 합니다.');
+            const maximumXp = state.player.level === GameLimits.MAX_LEVEL ? 0 : GameLimits.xpForLevel(state.player.level) - 1;
+            state.player.xp = number(player.xp, 'player.xp', maximumXp, true);
         }
         for (const [field, length] of [['relic', 4], ['ach', 5], ['achReady', 5]]) {
             if (!own(raw, field)) continue;
@@ -159,6 +186,10 @@ const Data = {
         if (own(raw, 'autoRemainder')) {
             state.autoRemainder = number(raw.autoRemainder, 'autoRemainder', 1);
             if (state.autoRemainder >= 1) throw new SaveValidationError('자동 공격 시간은 1초 미만이어야 합니다.');
+        }
+        if (own(raw, 'xpRemainder')) {
+            state.xpRemainder = number(raw.xpRemainder, 'xpRemainder', 1);
+            if (state.xpRemainder >= 1) throw new SaveValidationError('경험치 획득 시간은 1초 미만이어야 합니다.');
         }
         if (own(raw, 'skill')) {
             const skills = object(raw.skill, 'skill');

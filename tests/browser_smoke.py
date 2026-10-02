@@ -208,7 +208,9 @@ def main():
 
         def resume_hp():
             with fresh() as (_, page, _):
-                page.evaluate("Data.state.mob.hp = 40; Data.save()")
+                # This case isolates restoration of partial HP. The dedicated
+                # no-input case verifies that new games start auto-attacking.
+                page.evaluate("Data.state.stat.a = {l:0,p:0,c:100}; Data.state.mob.hp = 40; Data.save()")
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function("GameApp.booted && Data.canWrite", timeout=15000)
                 assert page.evaluate("Data.state.mob.hp") == 40
@@ -238,6 +240,7 @@ def main():
                     Data.state.stat.a = {l: 1, p: 10, c: 160};
                     Data.state.lastActiveAt = testClock;
                     Data.state.autoRemainder = 0;
+                    Data.state.xpRemainder = 0;
                     UI.renderAll();
                     testHidden = true;
                     document.dispatchEvent(new Event('visibilitychange'));
@@ -251,17 +254,22 @@ def main():
                     const hidden = {gold: Data.state.gold, lastActiveAt: Data.state.lastActiveAt};
                     testHidden = false;
                     document.dispatchEvent(new Event('visibilitychange'));
-                    const resumed = {gold: Data.state.gold, kills: Data.state.kills, hp: Data.state.mob.hp};
+                    const resumed = {gold: Data.state.gold, kills: Data.state.kills, hp: Data.state.mob.hp,
+                        player: {...Data.state.player}, xpRemainder: Data.state.xpRemainder};
                     document.dispatchEvent(new Event('visibilitychange'));
-                    return {from, hidden, resumed, secondGold: Data.state.gold,
-                        expected: {gold: expected.gold, kills: expected.kills, hp: expected.mob.hp}};
+                    return {from, hidden, resumed, secondGold: Data.state.gold, secondPlayer: {...Data.state.player},
+                        expected: {gold: expected.gold, kills: expected.kills, hp: expected.mob.hp,
+                            player: {...expected.player}, xpRemainder: expected.xpRemainder}};
                 }""")
                 assert detail["hidden"]["lastActiveAt"] == detail["from"], "hidden autosaves erased the away interval"
                 assert detail["hidden"]["gold"] == 0, "hidden tab generated live rewards"
                 assert detail["expected"]["gold"] > 0
                 assert detail["resumed"] == detail["expected"], "visibility resume diverged from the shared offline rules"
                 assert detail["secondGold"] == detail["resumed"]["gold"], "repeated visibility resume paid the same away rewards twice"
-                return {"controlledHiddenSeconds": 180, "resumedGold": detail["resumed"]["gold"], "paidOnce": True}
+                assert detail["secondPlayer"] == detail["resumed"]["player"], "repeated visibility resume paid the same away XP twice"
+                assert detail["resumed"]["player"]["level"] > 1
+                return {"controlledHiddenSeconds": 180, "resumedGold": detail["resumed"]["gold"],
+                    "resumedPlayer": detail["resumed"]["player"], "paidOnce": True}
 
         def closing_hidden_preserves_away():
             with fresh() as (_, page, _):
@@ -309,11 +317,88 @@ def main():
                 assert second.evaluate("Data.state.totalClicks") == 1
                 return {"repairedByFirstTab": True, "secondTabCanPlay": True, "originalRecoveryCopyPreserved": True}
 
+        def idle_without_input():
+            with fresh() as (_, page, _):
+                initial = page.evaluate("({player:{...Data.state.player}, hp:Data.state.mob.hp, clicks:Data.state.totalClicks})")
+                assert initial == {"player": {"level": 1, "xp": 0}, "hp": 100, "clicks": 0}, "a new game received progress before its first elapsed tick"
+                assert page.locator("#player-level").inner_text() == "Lv.1"
+                assert page.locator("#player-xp-track").get_attribute("role") == "progressbar"
+                page.wait_for_function("Data.state.player.xp >= 5 && Data.state.mob.hp < 100", timeout=3000)
+                first_tick = page.evaluate("({player:{...Data.state.player}, hp:Data.state.mob.hp, clicks:Data.state.totalClicks})")
+                assert first_tick["player"] == {"level": 1, "xp": 5}
+                assert first_tick["hp"] == 90
+                assert first_tick["clicks"] == 0
+                page.wait_for_function("$('player-xp-track').getAttribute('aria-valuenow') === '5'")
+                assert "5 / 20" in page.locator("#player-xp").inner_text()
+                page.wait_for_function("Data.state.player.level === 2", timeout=5000)
+                page.wait_for_function("$('player-level').textContent === 'Lv.2'")
+                assert page.evaluate("Data.state.totalClicks") == 0
+                assert page.locator("#player-xp-track").get_attribute("aria-valuemax") == "30"
+                return {"untouchedFirstTick": first_tick, "automaticFirstLevel": 2, "accessibleXPBar": True}
+
+        def anonymous_game_labels():
+            with fresh() as (_, page, _):
+                for tab in ["tab-stat", "tab-comp", "tab-relic", "tab-ach", "tab-sys"]:
+                    page.locator(f'[data-target="{tab}"]').click()
+                labels = page.evaluate(r"""() => [document.title, document.body.textContent,
+                    ...[...document.querySelectorAll('[aria-label]')].map(element => element.getAttribute('aria-label'))].join('\n')""")
+                for personal_name in ["나명심", "유미혜", "엽쌤", "엽아"]:
+                    assert personal_name not in labels, f"personal name is still rendered: {personal_name}"
+                assert "체력 코치" in labels
+                assert "응원 동료" in labels
+                return {"title": page.title(), "companions": "generic role labels", "personalNamesRemoved": True}
+
+        def migrated_xp_reload_reset():
+            with fresh() as (_, source, _):
+                legacy = source.evaluate("""() => {
+                    const state = Data.createDefault();
+                    state.version = 3; delete state.player; delete state.xpRemainder;
+                    state.gold = 777; state.mob.hp = 40;
+                    state.stat.a = {l:0,p:0,c:321};
+                    return JSON.stringify(state);
+                }""")
+            with fresh(raw=legacy) as (context, page, _):
+                assert page.evaluate("Data.state.version") == 4
+                assert page.evaluate("Data.state.gold") == 777
+                assert page.evaluate("Data.state.stat.a") == {"l": 1, "p": 10, "c": 321}
+                assert page.evaluate("Data.state.mob.hp") == 40
+                clock = page.evaluate("""() => {
+                    const clock = Date.now(); Date.now = () => clock;
+                    Data.state.player = {level:7,xp:13}; Data.state.xpRemainder = 0.25;
+                    Data.state.lastActiveAt = clock;
+                    if (!Data.save()) throw new Error('failed to save XP reload fixture');
+                    return clock;
+                }""")
+                context.add_init_script("Date.now = () => " + str(clock))
+                for _ in range(2):
+                    page.reload(wait_until="domcontentloaded")
+                    page.wait_for_function("GameApp.booted && Data.canWrite", timeout=15000)
+                    page.evaluate("() => GameApp.ready")
+                    assert page.evaluate("Data.state.player") == {"level": 7, "xp": 13}
+                    assert page.evaluate("Data.state.xpRemainder") == 0.25
+                    assert page.locator("#player-level").inner_text() == "Lv.7"
+                page.once("dialog", lambda dialog: dialog.accept())
+                page.evaluate("() => Sys.hardReset()")
+                assert page.evaluate("Data.state.player") == {"level": 1, "xp": 0}
+                assert page.evaluate("Data.state.xpRemainder") == 0
+                assert page.evaluate("Data.state.stat.a.p") == 10
+                assert page.locator("#player-level").inner_text() == "Lv.1"
+                assert page.evaluate("JSON.parse(localStorage.getItem(Data.key)).player") == {"level": 1, "xp": 0}
+                return {"legacyGold": 777, "freeStarter": True, "reloadedPlayer": {"level": 7, "xp": 13},
+                    "reloadBonus": 0, "resetRestoresIdleStart": True}
+
         def layouts():
             sizes = [(320, 568), (390, 844), (844, 320), (844, 360), (1440, 900)]
             checked = []
             for width, height in sizes:
                 with fresh({"width": width, "height": height}) as (_, page, _):
+                    header = page.locator("#header").bounding_box()
+                    xp = page.locator("#player-progress").bounding_box()
+                    assert header and xp and xp["height"] > 0
+                    assert xp["y"] >= header["y"] and xp["y"] + xp["height"] <= header["y"] + header["height"], f"XP display escapes its header at {width}x{height}"
+                    for skill in ["#btn-s1", "#btn-s2"]:
+                        box = page.locator(skill).bounding_box()
+                        assert box and box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"skill control is clipped at {width}x{height}: {box}"
                     for tab, button in [("tab-stat", "up-click"), ("tab-comp", "up-comp2"), ("tab-sys", None)]:
                         selector = f'[data-target="{tab}"]'
                         page.locator(selector).click()
@@ -340,6 +425,9 @@ def main():
             ("hidden autosaves preserve away progress and resume pays once", hidden_progress_once),
             ("closing a hidden tab preserves the away interval", closing_hidden_preserves_away),
             ("two corrupt tabs recover and hand off ownership after repair", repaired_corrupt_tabs),
+            ("untouched game starts automatic combat, XP, and leveling", idle_without_input),
+            ("title, companions, relics, and achievements omit personal names", anonymous_game_labels),
+            ("legacy save migrates and XP survives reload without bonuses, then resets", migrated_xp_reload_reset),
             ("portrait, short landscape, and desktop controls", layouts),
         ]:
             check(name, function)

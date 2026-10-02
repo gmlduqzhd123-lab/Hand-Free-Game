@@ -294,6 +294,17 @@ const UI = {
 
     renderRes() {
         const state = Data.state;
+        const maximumLevel = state.player.level >= GameLimits.MAX_LEVEL;
+        const requiredXP = Simulation.xpForLevel(state.player.level);
+        $('player-level').textContent = 'Lv.' + fNum(state.player.level);
+        $('player-level').setAttribute('aria-label', '플레이어 레벨 ' + fNum(state.player.level));
+        $('player-xp').textContent = maximumLevel ? '최고 레벨 달성' :
+            fNum(state.player.xp) + ' / ' + fNum(requiredXP) + ' EXP';
+        $('player-xp-fill').style.width = (maximumLevel ? 100 : state.player.xp / requiredXP * 100) + '%';
+        $('player-xp-track').setAttribute('aria-valuemax', String(maximumLevel ? 1 : requiredXP));
+        $('player-xp-track').setAttribute('aria-valuenow', String(maximumLevel ? 1 : state.player.xp));
+        $('player-xp-track').setAttribute('aria-valuetext', maximumLevel ? '최고 레벨 달성' :
+            '레벨 ' + state.player.level + ', 경험치 ' + state.player.xp + ' / ' + requiredXP + '. 초당 5 경험치 자동 획득.');
         const hour = 16 + Math.floor(state.min / 60);
         $('clock').textContent = '🕒 ' + hour + ':' + String(state.min % 60).padStart(2, '0');
         $('hud-gold').textContent = fNum(state.gold);
@@ -306,8 +317,8 @@ const UI = {
             ['click', state.stat.c, Logic.getC_Dmg(), '캔버스 타건력'],
             ['auto', state.stat.a, Logic.getA_Dmg(), '자동 파쇄기'],
             ['crit', state.stat.crit, state.stat.crit.p, '크리티컬 결재'],
-            ['comp1', state.comp.na, state.comp.na.p, '나명심 코치님'],
-            ['comp2', state.comp.yu, state.comp.yu.p, '유미혜 선생님']
+            ['comp1', state.comp.na, state.comp.na.p, '체력 코치'],
+            ['comp2', state.comp.yu, state.comp.yu.p, '응원 동료']
         ];
         for (const [name, entry, value, title] of descriptors) {
             $('lv-' + name).textContent = fNum(entry.l);
