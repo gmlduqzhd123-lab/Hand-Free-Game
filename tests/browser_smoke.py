@@ -55,10 +55,25 @@ def main():
             launch["proxy"] = {"server": proxy, "bypass": "127.0.0.1,localhost"}
         browser = playwright.chromium.launch(**launch)
 
+        def choose_character(page, character):
+            label = page.locator(f'label[for="character-{character}"], label:has(#character-{character})').first
+            if label.count():
+                label.click()
+            else:
+                page.locator(f"#character-{character}").check()
+            assert page.locator(f"#character-{character}").is_checked(), "the selected character radio did not change"
+
+        def start_game(page, character=None):
+            if character is not None:
+                choose_character(page, character)
+            page.locator("#btn-start-game").click()
+            page.wait_for_function("GameApp.playing && !$('game-app').hidden", timeout=15000)
+            assert page.locator("#intro-screen").is_hidden(), "the welcome screen still covers the game"
+
         @contextmanager
-        def fresh(viewport=None, raw=None, clock=None, reduced_motion=False):
+        def fresh(viewport=None, raw=None, clock=None, reduced_motion=False, stay_intro=False, character=None, mobile=False):
             context = browser.new_context(viewport=viewport or {"width": 390, "height": 844},
-                reduced_motion="reduce" if reduced_motion else "no-preference")
+                reduced_motion="reduce" if reduced_motion else "no-preference", is_mobile=mobile, has_touch=mobile)
             errors = []
             if clock is not None:
                 context.add_init_script("Date.now = () => " + str(clock))
@@ -91,6 +106,8 @@ def main():
                 assert response and response.ok, "game document did not load successfully"
                 page.wait_for_function("typeof GameApp !== 'undefined' && GameApp.booted && Data.canWrite", timeout=15000)
                 page.evaluate("() => GameApp.ready")
+                if not stay_intro and not page.evaluate("GameApp.recoveryPending"):
+                    start_game(page, character)
                 yield context, page, errors
                 assert not errors, "unhandled browser errors: " + "; ".join(errors)
             finally:
@@ -104,6 +121,232 @@ def main():
                 results.append({"name": name, "passed": True, "detail": detail})
             except Exception as error:
                 results.append({"name": name, "passed": False, "error": str(error)})
+                print(f"FAILED {name}: {error}", file=sys.stderr, flush=True)
+
+        progress_js = """({gold:Data.state.gold, gem:Data.state.gem, token:Data.state.token,
+            kills:Data.state.kills, min:Data.state.min, clicks:Data.state.totalClicks,
+            bossKills:Data.state.bossKills, player:{...Data.state.player}, mob:{...Data.state.mob},
+            skill:{...Data.state.skill}, buff:{...Data.state.buff},
+            autoRemainder:Data.state.autoRemainder, xpRemainder:Data.state.xpRemainder})"""
+
+        def intro_gate_and_start():
+            with fresh(stay_intro=True) as (_, page, _):
+                assert page.locator("#intro-screen").is_visible()
+                assert page.locator("#game-app").is_hidden()
+                assert page.evaluate("GameApp.playing") is False
+                assert page.locator("#intro-progress").inner_text().strip()
+                before = page.evaluate(progress_js)
+                page.wait_for_timeout(2200)
+                blocked = page.evaluate("""() => {
+                    const result = {attack:Combat.attack(20,20), rush:Combat.useSkill('rush'),
+                        night:Combat.useSkill('night'), upgrade:Logic.upgrade('click')};
+                    GameApp.flush(true); GameApp.resume(true);
+                    document.dispatchEvent(new Event('visibilitychange'));
+                    return result;
+                }""")
+                assert all(value is False for value in blocked.values()), "hidden gameplay accepted an action before Start"
+                assert page.evaluate(progress_js) == before, "the welcome screen advanced combat, XP, or skills"
+                start_game(page, "male")
+                assert page.evaluate("Data.state.character") == "male"
+                assert page.evaluate("Data.state.hasStarted") is True
+                assert "teacher-male.svg" in page.locator("#teacher-sprite").get_attribute("src")
+                assert "남" in page.locator("#chosen-character-name").inner_text()
+                assert page.evaluate("scrollY") == 0, "Start kept the welcome page's scroll position"
+                page.wait_for_function("Data.state.player.xp >= 5 && Data.state.mob.hp < 100", timeout=3000)
+                assert page.evaluate("Data.state.totalClicks") == 0
+                return {"introWaitMs": 2200, "hiddenActionsBlocked": blocked, "selected": "male", "automaticCombatStartsAfterButton": True}
+
+        def welcome_away_once():
+            with fresh(stay_intro=True) as (_, source, _):
+                fixture = source.evaluate("""() => {
+                    const now=Date.now(), state=Data.createDefault(); state.hasStarted=true;
+                    state.lastActiveAt=now-180000;
+                    const expected=JSON.parse(JSON.stringify(state));
+                    Simulation.simulate(expected,state.lastActiveAt,now,{offline:true});
+                    return {now,raw:JSON.stringify(state),expected};
+                }""")
+            with fresh(raw=fixture["raw"], clock=fixture["now"], stay_intro=True) as (_, page, _):
+                expected = fixture["expected"]
+                settled = page.evaluate(progress_js)
+                for field in ["gold", "gem", "token", "kills", "min", "bossKills", "player", "mob", "skill", "buff", "autoRemainder", "xpRemainder"]:
+                    assert settled[field] == expected[field], f"past away progress did not settle once into the welcome summary: {field}"
+                page.evaluate("window.awayMenuClock=Date.now(); Date.now=()=>awayMenuClock; awayMenuClock+=60000; GameApp.flush(); GameApp.resume(true)")
+                assert page.evaluate(progress_js) == settled, "waiting in the welcome screen generated additional away rewards"
+                start_game(page)
+                assert page.evaluate(progress_js) == settled, "Start awarded the already settled away interval again"
+                page.evaluate("GameApp.enterGame(); GameApp.enterGame(); GameApp.resume(true)")
+                assert page.evaluate(progress_js) == settled, "repeated Start awarded extra progress"
+                page.evaluate("awayMenuClock+=1000; Logic.catchUp(awayMenuClock)")
+                assert page.evaluate("Data.state.player.xp") == settled["player"]["xp"] + 5
+                return {"awaySeconds": 180, "menuSecondsExcluded": 60, "awayPaidOnce": True, "repeatedStartPaidNothing": True, "nextSecondXP": 5}
+
+        def returning_to_welcome_pauses():
+            with fresh(character="male") as (_, page, _):
+                page.evaluate("""window.menuClock=Date.now(); Date.now=()=>menuClock;
+                    Data.state.player={level:7,xp:13}; Data.state.gold=777; Data.state.mob.hp=40;
+                    Data.state.autoRemainder=0.25; Data.state.xpRemainder=0.25;
+                    Data.state.lastActiveAt=menuClock; UI.renderAll(); Data.save();""")
+                page.locator("#btn-return-intro").click()
+                assert page.locator("#intro-screen").is_visible()
+                assert page.locator("#game-app").is_hidden()
+                assert page.evaluate("GameApp.playing") is False
+                paused = page.evaluate(progress_js)
+                page.evaluate("menuClock+=120000; GameApp.flush(true); GameApp.resume(true); Combat.attack(20,20); Combat.useSkill('rush')")
+                page.wait_for_timeout(150)
+                assert page.evaluate(progress_js) == paused, "returning to character selection did not pause the game"
+                assert page.locator("#character-male").is_checked()
+                start_game(page)
+                assert page.evaluate(progress_js) == paused, "re-entry counted the character selection interval as play time"
+                page.evaluate("menuClock+=1000; Logic.catchUp(menuClock)")
+                assert page.evaluate("Data.state.player.xp") == 18
+                assert page.evaluate("Data.state.totalClicks") == paused["clicks"]
+                return {"menuSecondsExcluded": 120, "goldPreserved": 777, "fractionalTimePreserved": 0.25, "resumedXP": 18}
+
+        def selected_character_persists():
+            with fresh(character="male") as (context, page, _):
+                clock = page.evaluate("""() => {
+                    const clock=Date.now(); Date.now=()=>clock;
+                    Data.state.min=2; Data.state.player={level:7,xp:13};
+                    Data.state.lastActiveAt=clock; UI.renderAll(); Data.save(); return clock;
+                }""")
+                page.locator('[data-target="tab-sys"]').click()
+                page.once("dialog", lambda dialog: dialog.accept())
+                page.locator('button[onclick="Logic.prestige()"]').click()
+                assert page.evaluate("Data.state.character") == "male", "prestige changed the selected teacher"
+                page.evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined}); Sys.export()")
+                page.locator("#backup-dialog").wait_for(state="visible")
+                code = page.locator("#backup-code").input_value()
+                decoded = page.evaluate("code=>JSON.parse(decodeURIComponent(atob(code)))", code)
+                assert decoded["character"] == "male" and decoded["hasStarted"] is True
+                page.locator("#backup-close").click()
+                page.locator("#btn-return-intro").click()
+                start_game(page, "female")
+                assert "teacher.svg" in page.locator("#teacher-sprite").get_attribute("src")
+                assert "여" in page.locator("#chosen-character-name").inner_text()
+                page.locator('[data-target="tab-sys"]').click()
+                page.locator('button[onclick="Sys.import()"]').click()
+                page.locator("#import-code").fill(code)
+                page.locator("#import-submit").click()
+                assert page.evaluate("Data.state.character") == "male", "backup import did not restore the selected teacher"
+                assert "teacher-male.svg" in page.locator("#teacher-sprite").get_attribute("src")
+                unstarted_code=page.evaluate("state=>{state.hasStarted=false; return btoa(encodeURIComponent(JSON.stringify(state)))}", decoded)
+                page.locator('button[onclick="Sys.import()"]').click()
+                page.locator("#import-code").fill(unstarted_code)
+                page.locator("#import-submit").click()
+                assert page.evaluate("GameApp.playing") is False, "an unstarted backup skipped the welcome Start gate"
+                assert page.locator("#intro-screen").is_visible()
+                assert page.locator("#game-app").is_hidden()
+                start_game(page)
+                context.add_init_script("Date.now=()=>" + str(clock))
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_function("GameApp.booted && Data.canWrite")
+                assert page.locator("#intro-screen").is_visible()
+                assert page.locator("#game-app").is_hidden()
+                assert page.locator("#character-male").is_checked(), "reload forgot the saved teacher selection"
+                assert page.evaluate("Data.state.player") == {"level": 7, "xp": 13}
+                start_game(page)
+                assert page.evaluate("Data.state.character") == "male"
+                return {"bothSprites": True, "saveReload": "male", "prestige": "male", "backupImport": "male", "unstartedBackupRequiresStart":True, "playerProgressPreserved": True}
+
+        def start_storage_failure():
+            with fresh(stay_intro=True) as (_, page, _):
+                before = page.evaluate(progress_js)
+                choose_character(page, "male")
+                page.evaluate("""() => { window.originalSetItem=Storage.prototype.setItem;
+                    Storage.prototype.setItem=function(){throw new DOMException('Full','QuotaExceededError')}; }""")
+                page.locator("#btn-start-game").click()
+                assert page.evaluate("GameApp.playing") is False
+                assert page.locator("#game-app").is_hidden()
+                assert page.locator("#intro-error").inner_text().strip()
+                assert page.evaluate(progress_js) == before, "failed Start changed earned progress"
+                assert page.evaluate("Data.state.character") == "female", "failed Start committed an unsaved character"
+                page.evaluate("() => { Storage.prototype.setItem=originalSetItem; }")
+                start_game(page, "male")
+                assert page.evaluate("Data.state.character") == "male"
+                return {"failedStartRemainsInWelcome": True, "progressUnchanged": True, "retryStarts": True}
+
+        def gentle_audio():
+            with fresh() as (_, page, _):
+                page.evaluate("window.audioClock=Date.now(); Date.now=()=>audioClock; Data.state.lastActiveAt=audioClock")
+                page.evaluate("() => Sys.init()")
+                page.wait_for_function("Sys.ctx && Sys.ctx.state==='running'")
+                report = page.evaluate("""() => {
+                    const ctx=Sys.ctx, oscillators=[], gains=[], envelopes=[];
+                    window.audioProbe={oscillators,gains};
+                    const makeOsc=ctx.createOscillator.bind(ctx), makeGain=ctx.createGain.bind(ctx);
+                    const trackDisconnect=node=>{const disconnect=node.disconnect.bind(node);
+                        node.disconnected=false; node.disconnect=(...args)=>{node.disconnected=true; return disconnect(...args)}; return node};
+                    ctx.createOscillator=()=>{const node=trackDisconnect(makeOsc()); oscillators.push(node); return node};
+                    ctx.createGain=()=>{
+                        const node=trackDisconnect(makeGain()), steps=[]; gains.push(node); envelopes.push(steps);
+                        for(const method of ['setValueAtTime','linearRampToValueAtTime','exponentialRampToValueAtTime']) {
+                            const apply=node.gain[method].bind(node.gain);
+                            node.gain[method]=(value,time)=>{steps.push({method,value,time}); return apply(value,time)};
+                        }
+                        return node;
+                    };
+                    Sys.lastAttackSound=-Infinity;
+                    for(let i=0;i<20;i++) Sys.sfx.hit();
+                    const rapidHits=oscillators.length;
+                    for(const name of ['crit','coin','err','btn','gacha','ach']) {
+                        Sys.lastAttackSound=-Infinity; Sys.sfx[name]();
+                    }
+                    return {rapidHits,types:oscillators.map(node=>node.type),envelopes};
+                }""")
+                assert report["rapidHits"] == 1, "rapid attacks stacked harsh overlapping audio"
+                assert report["types"] and all(kind in ["sine", "triangle"] for kind in report["types"]), "an effect still uses a harsh waveform"
+                for envelope in report["envelopes"]:
+                    assert len(envelope) >= 3
+                    assert envelope[0]["value"] <= 0.001
+                    assert any(step["method"] == "linearRampToValueAtTime" for step in envelope), "effect lacks a soft attack envelope"
+                    attack = next(step for step in envelope if step["method"] == "linearRampToValueAtTime")
+                    assert abs(attack["time"] - envelope[0]["time"] - 0.008) < 0.000001
+                    assert max(step["value"] for step in envelope) <= 0.025
+                    assert envelope[-1]["value"] <= 0.001
+                    assert envelope[-1]["time"] > envelope[0]["time"]
+                page.wait_for_timeout(750)
+                assert page.evaluate("audioProbe.oscillators.every(node=>node.disconnected) && audioProbe.gains.every(node=>node.disconnected)"), "ended sound nodes remain connected"
+                muted = page.evaluate("""() => {
+                    const before=audioProbe.oscillators.length; Data.state.sound=false;
+                    Sys.lastAttackSound=-Infinity; Sys.sfx.hit(); Sys.sfx.ach();
+                    return audioProbe.oscillators.length===before;
+                }""")
+                assert muted, "muted gameplay still creates audio effects"
+                return {"rapid20HitsProduceNotes": report["rapidHits"], "waveforms": sorted(set(report["types"])), "softEnvelopeAttackMs": 8, "maximumGain": 0.025, "nodesCleanedUp": True, "muteSuppressesNotes": True}
+
+        def mobile_touch_and_rotation():
+            with fresh({"width": 390, "height": 844}, stay_intro=True, mobile=True) as (_, page, _):
+                page.locator('label[for="character-female"]').tap()
+                page.locator("#btn-start-game").tap()
+                page.wait_for_function("GameApp.playing")
+                assert page.evaluate("Data.state.character") == "female"
+                before = page.evaluate("Data.state.totalClicks")
+                page.locator("#battle-view").tap(position={"x": 25, "y": 30})
+                assert page.evaluate("Data.state.totalClicks") == before + 1
+                scroll_probe=page.evaluate("""() => {
+                    const battle=$('battle-view'), before=Data.state.totalClicks;
+                    const event=(type,id,y)=>battle.dispatchEvent(new PointerEvent(type,{bubbles:true,isPrimary:true,pointerType:'touch',pointerId:id,clientX:30,clientY:y}));
+                    event('pointerdown',91,30); event('pointermove',91,70); event('pointerup',91,70);
+                    event('pointerdown',92,30); event('pointercancel',92,30); event('pointerup',92,30);
+                    event('pointerdown',93,30); window.dispatchEvent(new Event('scroll')); event('pointerup',93,30);
+                    return Data.state.totalClicks===before;
+                }""")
+                assert scroll_probe, "touch scrolling or cancelled gestures caused attacks"
+                page.set_viewport_size({"width": 844, "height": 390})
+                page.locator("#btn-s1").tap()
+                assert page.evaluate("Data.state.skill.rush") > 0
+                page.locator("#btn-s2").tap()
+                assert page.evaluate("Data.state.buff.nightUntil > Date.now()")
+                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+                page.locator("#btn-return-intro").tap()
+                assert page.evaluate("GameApp.playing") is False
+                page.locator('label[for="character-male"]').tap()
+                page.locator("#btn-start-game").tap()
+                page.wait_for_function("GameApp.playing && Data.state.character==='male'")
+                assert "teacher-male.svg" in page.locator("#teacher-sprite").get_attribute("src")
+                assert page.evaluate("Data.state.totalClicks") == before + 1
+                assert page.evaluate("Data.state.skill.rush") > 0
+                return {"touchContext": True, "portrait": "390x844", "landscape": "844x390", "touchAttackAndSkills": True, "scrollAndCancelledTouchesDoNotAttack":True, "characterSwitchPreservesProgress": True}
 
         def initialization():
             with fresh() as (_, page, _):
@@ -246,7 +489,9 @@ def main():
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function("GameApp.booted && Data.canWrite", timeout=15000)
                 assert page.evaluate("Data.state.mob.hp") == 40
-                return {"savedHp": 40, "restoredHp": 40}
+                assert page.locator("#intro-screen").is_visible()
+                start_game(page)
+                return {"savedHp": 40, "restoredHpInWelcome": 40}
 
         def multiple_tabs():
             with fresh() as (context, first, _):
@@ -342,9 +587,11 @@ def main():
                 second.wait_for_function("Data.getRecovery() === null && !GameApp.recoveryPending", timeout=15000)
                 assert second.evaluate("localStorage.getItem(Data.key + ':recovery')") == "{an intentionally corrupt save"
                 first.close()
-                second.wait_for_function("Data.canWrite && Logic.canAct() && !GameApp.recoveryPending", timeout=15000)
+                second.wait_for_function("Data.canWrite && !GameApp.recoveryPending", timeout=15000)
                 assert second.locator("#session-overlay").is_hidden()
                 assert second.locator("#recovery-dialog").is_hidden()
+                start_game(second)
+                assert second.evaluate("Logic.canAct()") is True
                 second.locator("#battle-view").click(position={"x": 30, "y": 30})
                 assert second.evaluate("Data.state.totalClicks") == 1
                 return {"repairedByFirstTab": True, "secondTabCanPlay": True, "originalRecoveryCopyPreserved": True}
@@ -374,13 +621,20 @@ def main():
                     page.locator(f'[data-target="{tab}"]').click()
                 labels = page.evaluate(r"""() => [document.title, document.querySelector('meta[name="description"]').content, document.body.textContent,
                     ...[...document.querySelectorAll('[aria-label]')].map(element => element.getAttribute('aria-label'))].join('\n')""")
-                for personal_name in ["나명심", "유미혜", "엽쌤", "엽아"]:
+                for personal_name in ["나명심", "유미혜", "엽아"]:
                     assert personal_name not in labels, f"personal name is still rendered: {personal_name}"
+                gameplay_labels=page.evaluate(r"""() => {
+                    const body=document.body.cloneNode(true);
+                    body.querySelectorAll('.app-credit').forEach(credit=>credit.remove());
+                    return [document.title,document.querySelector('meta[name="description"]').content,body.textContent,
+                        ...[...body.querySelectorAll('[aria-label]')].map(element=>element.getAttribute('aria-label'))].join('\n');
+                }""")
+                assert "엽쌤" not in gameplay_labels, "creator alias appears outside the app-credit attribution"
                 assert "체육 요정" in labels, "the automatic companion's generic role label is missing"
                 assert "응원 요정" in labels, "the click companion's generic role label is missing"
                 assert "선생님" in labels and "초등" in labels, "the teacher premise is absent from game copy"
                 assert "선생님" in page.title(), "the title does not identify the teacher RPG"
-                return {"title": page.title(), "companions": "generic role labels", "personalNamesRemoved": True}
+                return {"title": page.title(), "companions": "generic role labels", "personalNamesRemoved": True, "creatorAliasOnlyInAttribution":True}
 
         def upgrades_relics_prestige_backup():
             with fresh() as (_, page, _):
@@ -431,6 +685,7 @@ def main():
                 legacy = source.evaluate("""() => {
                     const state = Data.createDefault();
                     state.version = 3; delete state.player; delete state.xpRemainder;
+                    delete state.character; delete state.hasStarted;
                     state.gold = 777; state.mob.hp = 40;
                     state.stat.a = {l:0,p:0,c:321};
                     return JSON.stringify(state);
@@ -454,6 +709,7 @@ def main():
                     page.evaluate("() => GameApp.ready")
                     assert page.evaluate("Data.state.player") == {"level": 7, "xp": 13}
                     assert page.evaluate("Data.state.xpRemainder") == 0.25
+                    start_game(page)
                     assert page.locator("#player-level").inner_text() == "Lv.7"
                 page.once("dialog", lambda dialog: dialog.accept())
                 page.evaluate("() => Sys.hardReset()")
@@ -470,6 +726,7 @@ def main():
                 fixture = source.evaluate("""() => {
                     const now = Date.now(); const state = Data.createDefault();
                     state.version = 2; delete state.player; delete state.xpRemainder;
+                    delete state.character; delete state.hasStarted;
                     state.gold = 12345; state.gem = 36; state.token = 12;
                     state.kills = 104; state.min = 1; state.totalClicks = 654; state.bossKills = 1;
                     state.stat.c = {l:22,p:1234,c:789}; state.stat.a = {l:9,p:321,c:999};
@@ -502,31 +759,84 @@ def main():
                 (390, 844), (412, 915), (430, 932), (768, 1024),
                 (568, 320), (844, 320), (844, 360), (1024, 768), (1280, 720), (1440, 900)]
             checked = []
+            intro_checked = []
+
+            def readable_text(page, root):
+                problems = page.evaluate("""root => {
+                    const problems=[];
+                    for (const element of document.querySelectorAll(`${root} *`)) {
+                        if (element.closest('[aria-hidden="true"],.sr-only,script,style,svg')) continue;
+                        if (!element.getClientRects().length || !element.checkVisibility({visibilityProperty:true})) continue;
+                        if (element.closest('details:not([open])') && !element.closest('summary')) continue;
+                        const textNodes=[...element.childNodes].filter(node=>node.nodeType===3 && node.textContent.trim());
+                        if (!textNodes.length) continue;
+                        const style=getComputedStyle(element), label=element.id || element.className || element.tagName;
+                        if (parseFloat(style.fontSize)<14) problems.push(`${label}: ${style.fontSize}`);
+                        for(const node of textNodes) {
+                            const range=document.createRange(); range.selectNodeContents(node);
+                            for (const box of range.getClientRects()) {
+                                for(let ancestor=element; ancestor && ancestor!==document.body; ancestor=ancestor.parentElement) {
+                                    const s=getComputedStyle(ancestor), outer=ancestor.getBoundingClientRect();
+                                    if(['hidden','clip'].includes(s.overflowX) && (box.left<outer.left-2 || box.right>outer.right+2)) problems.push(`${label}: horizontal text clipping by ${ancestor.id || ancestor.className}`);
+                                    if(['hidden','clip'].includes(s.overflowY) && (box.top<outer.top-2 || box.bottom>outer.bottom+2)) problems.push(`${label}: vertical text clipping by ${ancestor.id || ancestor.className} (${node.textContent.trim().slice(0,40)})`);
+                                }
+                            }
+                        }
+                    }
+                    return [...new Set(problems)];
+                }""", root)
+                assert not problems, f"unreadable or clipped text at {page.viewport_size}: " + "; ".join(problems)
+
+            def reachable(page, selector, width, height):
+                element=page.locator(selector)
+                assert element.is_visible(), f"{selector} is hidden at {width}x{height}"
+                element.evaluate("element=>element.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'})")
+                box=element.bounding_box()
+                assert box and box["width"]>0 and box["height"]>0
+                assert box["x"]>=-1 and box["x"]+box["width"]<=width+1, f"{selector} is horizontally clipped at {width}x{height}: {box}"
+                assert box["y"]>=-1 and box["y"]+box["height"]<=height+1, f"{selector} cannot be reached by scrolling at {width}x{height}: {box}"
+                return box
+
+            for width, height in [(320,568),(375,667),(390,844),(430,932),(568,320),(844,320),(1280,720),(1440,900)]:
+                with fresh({"width":width,"height":height}, stay_intro=True) as (_,page,_):
+                    page.evaluate("() => document.fonts.ready")
+                    readable_text(page,"#intro-screen")
+                    for selector in ['label[for="character-male"]','label[for="character-female"]',"#btn-start-game"]:
+                        box=reachable(page,selector,width,height)
+                        assert box["height"]>=44 and box["width"]>=44
+                    for character in ["male","female"]:
+                        choose_character(page,character)
+                        image=page.locator(f".intro-{character}")
+                        assert image.is_visible()
+                        assert image.evaluate("image=>image.complete && image.naturalWidth>0")
+                        contained=image.evaluate("""image=>{
+                            const b=image.getBoundingClientRect(), s=image.closest('.intro-classroom').getBoundingClientRect();
+                            return b.left>=s.left-2 && b.right<=s.right+2 && b.top>=s.top-2 && b.bottom<=s.bottom+2;
+                        }""")
+                        assert contained, f"{character} welcome artwork is clipped at {width}x{height}"
+                    assert page.evaluate("document.documentElement.scrollWidth<=innerWidth+1"), f"welcome has horizontal overflow at {width}x{height}"
+                    intro_checked.append(f"{width}x{height}")
+
             for width, height in sizes:
                 with fresh({"width": width, "height": height}) as (_, page, _):
                     page.evaluate("() => document.fonts.ready")
                     def visible_box(selector):
-                        element = page.locator(selector)
-                        assert element.is_visible(), f"{selector} is hidden at {width}x{height}"
-                        box = element.bounding_box()
-                        assert box and box["width"] > 0 and box["height"] > 0
-                        assert box["x"] >= -1 and box["x"] + box["width"] <= width + 1, f"{selector} is horizontally clipped at {width}x{height}: {box}"
-                        assert box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"{selector} is vertically clipped at {width}x{height}: {box}"
-                        return box
+                        return reachable(page,selector,width,height)
 
-                    header = page.locator("#header").bounding_box()
                     xp = visible_box("#player-progress")
+                    header = page.locator("#header").bounding_box()
                     assert header and xp and xp["height"] > 0
                     assert xp["y"] >= header["y"] and xp["y"] + xp["height"] <= header["y"] + header["height"], f"XP display escapes its header at {width}x{height}"
                     glance = {selector: visible_box(selector) for selector in ["#hud-gold", "#hud-gem", "#hud-token",
                         "#hud-auto", "#hud-click", "#mob-name", "#mob-hp-track", "#hp-text", "#work-stage",
-                        "#btn-s1", "#btn-s2", "#tab-nav", "#up-click", "#up-auto", "#up-crit"]}
-                    for card in page.locator("#tab-stat .up-card").all():
-                        box = card.bounding_box()
-                        assert box and box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"initial upgrade card requires scrolling at {width}x{height}: {box}"
+                        "#btn-s1", "#btn-s2", "#tab-nav", "#up-click", "#up-auto", "#up-crit", "#btn-return-intro"]}
                     for tab_button in page.locator(".tab-btn").all():
                         box = tab_button.bounding_box()
-                        assert box and box["width"] >= 44 and box["height"] >= 40, f"tab touch target is too small at {width}x{height}: {box}"
+                        assert box and box["width"] >= 44 and box["height"] >= 44, f"tab touch target is too small at {width}x{height}: {box}"
+                        assert tab_button.evaluate("element=>parseFloat(getComputedStyle(element).fontSize)")>=16
+                    scene = page.locator(".battle-body").bounding_box()
+                    assert scene and scene["height"]>=310, f"battle was compressed at {width}x{height}"
+                    assert page.locator("#mob-name").evaluate("element=>parseFloat(getComputedStyle(element).fontSize)")>=20
                     battle = page.locator("#battle-view").bounding_box()
                     panel = page.locator("#panel-area").bounding_box()
                     workspace = page.locator("#game-app").bounding_box()
@@ -549,15 +859,13 @@ def main():
                     boss_view = {selector: visible_box(selector) for selector in ["#mob-name", "#mob-hp-track",
                         "#hp-text", "#boss-timer-wrap", "#boss-seconds", "#btn-s1", "#btn-s2", "#tab-nav",
                         "#up-click", "#up-auto", "#up-crit"]}
-                    for card in page.locator("#tab-stat .up-card").all():
-                        box = card.bounding_box()
-                        assert box and box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"boss display pushes an upgrade card out of view at {width}x{height}: {box}"
                     boss_battle = page.locator("#battle-view").bounding_box()
-                    boss_timer = boss_view["#boss-timer-wrap"]
+                    boss_timer = page.locator("#boss-timer-wrap").bounding_box()
                     assert boss_battle and boss_timer["y"] >= boss_battle["y"] and boss_timer["y"] + boss_timer["height"] <= boss_battle["y"] + boss_battle["height"], f"boss deadline is outside its battle card at {width}x{height}"
-                    for tab, button in [("tab-stat", "up-click"), ("tab-comp", "up-comp2"), ("tab-sys", None)]:
+                    for tab, button in [("tab-stat", "up-click"), ("tab-comp", "up-comp2"), ("tab-relic", None), ("tab-ach", None), ("tab-sys", None)]:
                         selector = f'[data-target="{tab}"]'
                         page.locator(selector).click()
+                        readable_text(page,"#game-app")
                         target = page.locator(f"#{button}") if button else page.locator(f"#{tab} button").last
                         target.scroll_into_view_if_needed()
                         box = target.bounding_box()
@@ -565,9 +873,8 @@ def main():
                         assert box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"{tab} control is clipped at {width}x{height}: {box}"
                     dimensions = page.evaluate("({scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth})")
                     assert dimensions["scroll"] <= dimensions["client"] + 1, "unintended horizontal overflow"
-                    checked.append({"viewport": f"{width}x{height}", "initialControls": glance,
-                        "bossControls": boss_view, "battle": battle, "panel": panel, "workspace": workspace})
-            return {"visibleWithoutScrolling": checked, "tabTouchTargets": "at least 44 × 40 CSS pixels"}
+                    checked.append({"viewport": f"{width}x{height}", "battleHeight":scene["height"], "allFiveTabsReadableAndReachable":True})
+            return {"welcomeViewports":intro_checked,"gameViewports":checked,"verticalScrollingAllowed":True,"textMinimumPixels":14,"tabsMinimumFontPixels":16,"tabTouchTargets":"at least 44 × 44 CSS pixels"}
 
         def dialogs_on_compact_screens():
             checked = []
@@ -617,11 +924,12 @@ def main():
 
         def teacher_enemy_layouts():
             checked = []
-            for width, height in [(320, 601), (375, 667), (390, 844), (430, 932), (568, 320), (844, 320), (1024, 768), (1280, 720), (1440, 900)]:
-                with fresh({"width": width, "height": height}) as (_, page, _):
+            for width, height in [(320, 568), (320, 601), (375, 667), (390, 844), (430, 932), (568, 320), (844, 320), (1024, 768), (1280, 720), (1440, 900)]:
+                with fresh({"width": width, "height": height}, character="male" if width in [320,568,1280] else "female") as (_, page, _):
                     page.evaluate("window.artClock = Date.now(); Date.now = () => artClock")
                     page.evaluate("() => document.fonts.ready")
                     assert page.locator("#teacher-sprite").is_visible()
+                    page.locator(".battle-body").scroll_into_view_if_needed()
                     page.wait_for_function("$('teacher-sprite').complete && $('teacher-sprite').naturalWidth > 0")
 
                     def contained_art():
@@ -637,7 +945,7 @@ def main():
                                     (!x || (box.left >= outer.left - 2 && box.right <= outer.right + 2)) &&
                                     (!y || (box.top >= outer.top - 2 && box.bottom <= outer.bottom + 2));
                                 if (!within(battle)) problems.push(`${selector} escapes battle: ${JSON.stringify({left:box.left,top:box.top,right:box.right,bottom:box.bottom})}`);
-                                if (box.left < -1 || box.right > innerWidth + 1 || box.top < -1 || box.bottom > innerHeight + 1) problems.push(`${selector} escapes viewport`);
+                                if (box.left < -1 || box.right > innerWidth + 1) problems.push(`${selector} escapes viewport horizontally`);
                                 for (let ancestor = element.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
                                     const style = getComputedStyle(ancestor);
                                     const clipsX = ['hidden','clip','auto','scroll'].includes(style.overflowX);
@@ -744,15 +1052,20 @@ def main():
             directory = Path(args.screenshots)
             directory.mkdir(parents=True, exist_ok=True)
             images = []
-            for width, height in [(390, 844), (390, 780), (1440, 900), (320, 568), (320, 601), (375, 667), (430, 932), (568, 320), (844, 320)]:
-                with fresh({"width": width, "height": height}) as (_, page, _):
+            for width, height in [(390, 844), (390, 780), (1440, 900), (320, 568), (320, 601), (375, 667), (430, 932), (568, 320), (844, 320), (1280,720)]:
+                with fresh({"width": width, "height": height}, stay_intro=True) as (_, page, _):
+                    page.evaluate("() => document.fonts.ready")
+                    intro=directory / f"welcome-{width}x{height}.png"
+                    page.screenshot(path=str(intro), animations="disabled", full_page=True)
+                    images.append(str(intro))
+                    start_game(page, "male" if width in [320,568,1280] else "female")
                     # Stop time at the current frame so an image is a stable
                     # layout artifact rather than a capture of random combat.
                     page.evaluate("window.visualClock = Date.now(); Date.now = () => visualClock")
                     page.evaluate("() => document.fonts.ready")
                     page.wait_for_timeout(180)
                     initial = directory / f"initial-{width}x{height}.png"
-                    page.screenshot(path=str(initial), animations="disabled")
+                    page.screenshot(path=str(initial), animations="disabled", full_page=True)
                     page.evaluate("""() => {
                         Data.state.player = {level:36,xp:220};
                         Data.state.min = 2; Data.state.gold = 1806;
@@ -769,11 +1082,18 @@ def main():
                     }""")
                     page.wait_for_timeout(180)
                     progressed = directory / f"progressed-{width}x{height}.png"
-                    page.screenshot(path=str(progressed), animations="disabled")
+                    page.screenshot(path=str(progressed), animations="disabled", full_page=True)
                     images.extend([str(initial), str(progressed)])
             return {"images": images, "progressedFixture": {"level": 36, "minute": 2, "gold": 1806, "activeNightBuff": True}}
 
         for name, function in [
+            ("welcome blocks progression until character selection and Start", intro_gate_and_start),
+            ("welcome settles prior away rewards once and excludes menu time", welcome_away_once),
+            ("returning to welcome pauses combat and excludes menu rewards", returning_to_welcome_pauses),
+            ("both teacher sprites and selected character survive save, prestige, and backup", selected_character_persists),
+            ("failed Start save remains in welcome and retry succeeds", start_storage_failure),
+            ("gentle audio uses soft envelopes, throttles attacks, and cleans nodes", gentle_audio),
+            ("mobile touch and portrait-landscape rotation preserve gameplay", mobile_touch_and_rotation),
             ("initialization and both skills", initialization),
             ("keyboard attack and immediately claimable achievement", keyboard_and_achievement),
             ("clipboard fallback and downloadable backup", clipboard_fallback),
@@ -786,7 +1106,7 @@ def main():
             ("hidden autosaves preserve away progress and resume pays once", hidden_progress_once),
             ("closing a hidden tab preserves the away interval", closing_hidden_preserves_away),
             ("two corrupt tabs recover and hand off ownership after repair", repaired_corrupt_tabs),
-            ("untouched game starts automatic combat, XP, and leveling", idle_without_input),
+            ("after Start untouched game continues automatic combat, XP, and leveling", idle_without_input),
             ("title, companions, relics, and achievements omit personal names", anonymous_game_labels),
             ("upgrades, companions, distinct relics, prestige, and valid backup round trip", upgrades_relics_prestige_backup),
             ("legacy save migrates and XP survives reload without bonuses, then resets", migrated_xp_reload_reset),

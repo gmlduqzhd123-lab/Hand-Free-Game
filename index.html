@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#302d4c">
-    <meta name="description" content="귀여운 초등학교 선생님과 함께하는 교실 모험. 시작하자마자 자동 전투와 경험치 획득이 이어지는 방치형 RPG입니다.">
+    <meta name="description" content="귀여운 초등학교 선생님을 선택해 시작하면 자동 전투와 경험치 획득이 이어지는 방치형 RPG. 남교사와 여교사, 따스한 교실과 작은 마법이 기다립니다.">
     <title>4시 40분의 용사 · 선생님의 방치형 RPG</title>
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="엽쌤스쿨">
     <meta property="og:title" content="4시 40분의 용사 · 선생님의 방치형 RPG">
-    <meta property="og:description" content="귀여운 선생님이 교실 몬스터를 물리치는 방치형 RPG. 켜자마자 자동 전투, 가입 없이 바로!">
+    <meta property="og:description" content="귀여운 선생님을 선택해 교실 몬스터를 물리치는 방치형 RPG. 모험을 시작하면 자동 전투, 가입 없이 바로!">
     <meta property="og:url" content="https://gmlduqzhd123-lab.github.io/Hand-Free-Game/">
     <meta property="og:locale" content="ko_KR">
     <meta property="og:image" content="https://gmlduqzhd123-lab.github.io/Hand-Free-Game/og-image.jpg">
@@ -21,7 +21,8 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="https://gmlduqzhd123-lab.github.io/Hand-Free-Game/og-image.jpg">
     <link rel="icon" type="image/svg+xml" href="icon.svg">
-    <link rel="stylesheet" href="styles.css?v=teacher-rpg-2">
+    <link rel="stylesheet" href="styles.css?v=welcome-1">
+    <link rel="stylesheet" href="presentation.css?v=welcome-1">
 </head>
 <body>
 <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -48,12 +49,43 @@
     <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 6a6 6 0 0 1 6 6"/></symbol>
 </defs></svg>
 
-<div id="game-app">
+<main id="intro-screen" aria-labelledby="intro-title">
+    <header class="intro-topline"><a class="intro-brand" href="#intro-title"><span class="intro-brand-mark" aria-hidden="true">✦</span><span>4시 40분의 용사</span></a><span class="intro-edition">선생님의 작은 모험</span></header>
+    <div class="intro-layout">
+        <section class="intro-copy">
+            <p class="intro-kicker"><span aria-hidden="true">✦</span> 교실에서 펼쳐지는 방치형 RPG</p>
+            <h1 id="intro-title" tabindex="-1">4시 40분의<br><em>용사</em></h1>
+            <p class="intro-description">하루의 끝, 평범한 교실이<br>선생님만의 작은 모험이 됩니다.</p>
+            <p class="intro-detail">마법 연필과 칭찬 한 스푼으로 귀여운 몬스터들을 물리쳐요. 시작하면 자동 전투와 성장이 이어집니다.</p>
+            <fieldset class="character-picker">
+                <legend>어떤 선생님과 함께할까요?</legend>
+                <div class="character-options">
+                    <label class="character-option" for="character-male"><input id="character-male" type="radio" name="teacher-character" value="male"><span class="character-card"><img src="assets/teacher-male.svg" alt="" width="74" height="91"><span><strong>남교사</strong><small>교실의 용사</small></span><span class="character-check" aria-hidden="true">✓</span></span></label>
+                    <label class="character-option" for="character-female"><input id="character-female" type="radio" name="teacher-character" value="female" checked><span class="character-card"><img src="assets/teacher.svg" alt="" width="74" height="91"><span><strong>여교사</strong><small>교실의 용사</small></span><span class="character-check" aria-hidden="true">✓</span></span></label>
+                </div>
+                <p class="character-note">두 선생님의 전투 능력은 같아요. 모험 중에도 바꿀 수 있어요.</p>
+            </fieldset>
+            <p id="intro-progress" class="intro-progress" role="status" aria-live="polite"></p>
+            <button id="btn-start-game" class="intro-start" type="button">모험 시작하기 <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button>
+            <p id="intro-error" class="intro-error" role="status" aria-live="polite"></p>
+            <p class="intro-start-note">실명 없이 바로 시작 · 기존 진행은 그대로 이어져요</p>
+        </section>
+        <figure class="intro-art" aria-label="따스한 교실에서 마법 연필을 든 선생님이 졸음 슬라임과 만나는 장면">
+            <div class="intro-art-top"><span>오늘의 모험</span><span aria-hidden="true">16:00 → 16:40</span></div>
+            <div class="intro-classroom"><span class="intro-scene-label">햇살 가득한 교실</span><img class="intro-teacher intro-female" src="assets/teacher.svg" alt="" width="260" height="320"><img class="intro-teacher intro-male" src="assets/teacher-male.svg" alt="" width="260" height="320"><span class="intro-spell" aria-hidden="true">✦</span><img class="intro-slime" src="assets/enemy-0.svg" alt="" width="200" height="200"><span class="intro-art-caption">작은 마법이 쌓여, 큰 용기가 되는 시간.</span></div>
+            <figcaption><span class="intro-caption-star" aria-hidden="true">✦</span><span>오늘도 잘했어요, 선생님.</span></figcaption>
+        </figure>
+    </div>
+    <footer class="intro-features"><span><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg> 손을 놓아도 자동 전투</span><span><svg class="icon" aria-hidden="true"><use href="#i-spark"/></svg> 매초 쌓이는 경험치</span><span><svg class="icon" aria-hidden="true"><use href="#i-note"/></svg> 모험은 자동으로 저장</span></footer>
+</main>
+
+<div id="game-app" hidden>
     <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
     <header id="header">
         <div class="topline">
-            <div class="brand"><span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-spark"/></svg></span><div><h1>4시 40분의 용사</h1><p>작은 교실에서 시작되는 선생님의 모험</p></div></div>
+            <div class="brand"><span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-spark"/></svg></span><div><h1>4시 40분의 용사</h1><p><span id="chosen-character-name">여교사</span>와 함께하는 작은 교실의 모험</p></div></div>
             <div class="header-actions">
+                <button id="btn-return-intro" type="button" class="return-intro-button"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>선생님 선택</span></button>
                 <span class="work-clock" aria-label="현재 모험 시간"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span id="clock">16:00</span><span class="clock-target">/ 16:40</span></span>
                 <button id="btn-sound" type="button" onclick="Sys.toggleSound()" aria-label="소리 끄기" aria-pressed="true" data-muted="false"><svg class="icon sound-on" aria-hidden="true"><use href="#i-volume"/></svg><svg class="icon sound-off" aria-hidden="true"><use href="#i-muted"/></svg><span id="sound-label" class="sr-only">효과음 켜짐</span></button>
             </div>
@@ -195,8 +227,8 @@
     </div>
 </dialog>
 
-<script src="save.js?v=teacher-rpg-1" defer></script>
-<script src="game.js?v=teacher-rpg-1" defer></script>
-<script src="app.js?v=teacher-rpg-1" defer></script>
+<script src="save.js?v=welcome-1" defer></script>
+<script src="game.js?v=welcome-1" defer></script>
+<script src="app.js?v=welcome-1" defer></script>
 </body>
 </html>

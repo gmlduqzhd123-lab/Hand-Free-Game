@@ -16,6 +16,7 @@ const Sys = {
     levelNoticeTimer: null,
     shakeTimer: null,
     audioWarning: false,
+    lastAttackSound: -Infinity,
     get sound() { return Data.state.sound !== false; },
 
     async init() {
@@ -42,39 +43,53 @@ const Sys = {
         else if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend().catch(() => {});
     },
 
-    play(frequency, type, duration, volume = 0.05) {
+    play(frequency, type, duration, volume = 0.018, delay = 0, endFrequency = frequency) {
         if (!this.sound || !this.ctx || this.ctx.state !== 'running') return;
         try {
             const oscillator = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
             oscillator.type = type;
-            oscillator.frequency.value = frequency;
-            gain.gain.setValueAtTime(volume, this.ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+            const start = this.ctx.currentTime + delay;
+            oscillator.frequency.setValueAtTime(frequency, start);
+            oscillator.frequency.exponentialRampToValueAtTime(endFrequency, start + duration);
+            // A short soft attack avoids the sharp click of an instant gain change.
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.linearRampToValueAtTime(Math.min(0.025, volume), start + 0.008);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
             oscillator.connect(gain);
             gain.connect(this.ctx.destination);
             oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
-            oscillator.start();
-            oscillator.stop(this.ctx.currentTime + duration);
+            oscillator.start(start);
+            oscillator.stop(start + duration);
         } catch (error) { /* Audio interruption must never interrupt the game. */ }
     },
 
     sfx: {
-        hit: () => Sys.play(150, 'square', 0.1, 0.03),
-        crit: () => Sys.play(300, 'sawtooth', 0.15, 0.05),
-        coin: () => {
-            Sys.play(800, 'sine', 0.1, 0.02);
-            setTimeout(() => Sys.play(1200, 'sine', 0.15, 0.02), 80);
+        hit: () => {
+            const now = performance.now();
+            if (now - Sys.lastAttackSound < 70) return;
+            Sys.lastAttackSound = now;
+            Sys.play(660, 'sine', 0.12, 0.014, 0, 880);
         },
-        err: () => Sys.play(100, 'triangle', 0.3, 0.05),
-        btn: () => Sys.play(500, 'sine', 0.05, 0.02),
+        crit: () => {
+            const now = performance.now();
+            if (now - Sys.lastAttackSound < 70) return;
+            Sys.lastAttackSound = now;
+            Sys.play(784, 'sine', 0.15, 0.015);
+            Sys.play(1047, 'sine', 0.18, 0.012, 0.07);
+        },
+        coin: () => {
+            Sys.play(659, 'sine', 0.14, 0.012);
+            Sys.play(880, 'sine', 0.2, 0.012, 0.07);
+        },
+        err: () => Sys.play(440, 'sine', 0.2, 0.012, 0, 392),
+        btn: () => Sys.play(698, 'sine', 0.1, 0.012, 0, 784),
         gacha: () => {
-            Sys.play(400, 'square', 0.1, 0.04);
-            setTimeout(() => Sys.play(600, 'square', 0.2, 0.04), 150);
+            [523, 659, 784, 1047].forEach((note, i) => Sys.play(note, 'sine', 0.24, 0.014, i * 0.09));
         },
         ach: () => {
-            Sys.play(500, 'sine', 0.1, 0.04);
-            setTimeout(() => Sys.play(800, 'sine', 0.2, 0.04), 100);
+            Sys.play(659, 'sine', 0.2, 0.014);
+            Sys.play(988, 'sine', 0.26, 0.014, 0.1);
         }
     },
 
@@ -400,7 +415,7 @@ const UI = {
         $('mob-hp-track').setAttribute('aria-valuetext', '남은 체력 ' + fNum(state.mob.hp) + ', 최대 체력 ' + fNum(maxHP));
         if ($('hp-text')) $('hp-text').textContent = fNum(state.mob.hp) + ' / ' + fNum(maxHP);
         if ($('work-stage')) $('work-stage').textContent = fNum(state.kills + 1);
-        if ($('work-status')) $('work-status').textContent = !Data.canWrite || GameApp.recoveryPending || document.hidden
+        if ($('work-status')) $('work-status').textContent = !GameApp.playing || !Data.canWrite || GameApp.recoveryPending || document.hidden
             ? '일시 정지' : state.mob.boss ? '보스 전투 중' : '자동 전투 중';
         if ($('next-boss')) $('next-boss').textContent = state.mob.boss ? '보스를 물리쳐 보석을 모으세요'
             : state.kills >= GameLimits.MAX_COUNTER ? '최고 모험 단계' : (100 - state.kills % 100) + '마리 뒤 보스 등장';
@@ -506,7 +521,15 @@ const UI = {
         Sys.sfx.btn();
     },
 
+    renderCharacter() {
+        const male = Data.state.character === 'male';
+        const source = male ? 'assets/teacher-male.svg' : 'assets/teacher.svg';
+        if ($('teacher-sprite').getAttribute('src') !== source) $('teacher-sprite').setAttribute('src', source);
+        $('chosen-character-name').textContent = male ? '남교사' : '여교사';
+    },
+
     renderAll() {
+        this.renderCharacter();
         this.renderRes();
         this.renderHp();
         this.renderAch();
@@ -519,12 +542,84 @@ const UI = {
 
 const GameApp = {
     booted: false,
+    playing: false,
     recoveryPending: false,
     lastVisual: 0,
     lastRender: 0,
     savedStatus: null,
     errorMessage: '',
     ready: null,
+
+    renderIntro(syncSelection = false) {
+        if (syncSelection) {
+            $('character-male').checked = Data.state.character === 'male';
+            $('character-female').checked = Data.state.character !== 'male';
+        }
+        const blocked = !Data.canWrite || this.recoveryPending;
+        $('btn-start-game').disabled = blocked;
+        $('intro-error').textContent = blocked ? this.recoveryPending
+            ? '저장 데이터 복구 후 시작할 수 있어요.' : '다른 탭을 닫거나 이 탭에서 이어하기를 선택해 주세요.' : '';
+        const started = Data.state.hasStarted;
+        $('intro-progress').textContent = started
+            ? '저장된 모험 · Lv.' + Data.state.player.level + ' · ' + fNum(Data.state.kills) + '마리 처치'
+            : '새로운 모험이 선생님을 기다리고 있어요.';
+        $('btn-start-game').innerHTML = (started ? '모험 이어하기' : '모험 시작하기') +
+            ' <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg>';
+    },
+
+    prepareIntroProgress() {
+        if (!Data.canWrite || this.recoveryPending || this.playing) return;
+        const now = Date.now();
+        if (Data.state.hasStarted) {
+            const from = Math.min(now, Data.state.lastActiveAt);
+            Logic.reconcile(from);
+            Logic.advance(from, now, { offline: true, silent: true, render: false });
+        }
+        Data.state.lastActiveAt = now;
+        Logic.reconcile(now);
+        Data.save();
+        this.renderIntro(true);
+    },
+
+    enterGame() {
+        if (this.playing || !this.booted || !Data.canWrite || this.recoveryPending || document.hidden) return false;
+        const now = Date.now();
+        const candidate = Logic.cloneState();
+        candidate.character = $('character-male').checked ? 'male' : 'female';
+        candidate.hasStarted = true;
+        // Introduction time never becomes a combat or experience interval.
+        candidate.lastActiveAt = now;
+        if (!Logic.commit(candidate)) {
+            $('intro-error').textContent = '진행을 저장하지 못했습니다. 잠시 뒤 다시 시작해 주세요.';
+            return false;
+        }
+        this.playing = true;
+        $('intro-screen').hidden = true;
+        $('game-app').hidden = false;
+        VFX.reset();
+        VFX.resize();
+        Logic.reconcile(now);
+        this.lastVisual = performance.now();
+        this.lastRender = 0;
+        UI.renderAll();
+        window.scrollTo(0, 0);
+        $('battle-view').focus({ preventScroll: true });
+        void Sys.init().then(() => Sys.sfx.ach());
+        return true;
+    },
+
+    goToIntro(settle = true) {
+        if (!this.playing) return;
+        if (settle) this.flush(true);
+        this.playing = false;
+        VFX.reset();
+        $('game-app').hidden = true;
+        $('intro-screen').hidden = false;
+        this.renderIntro(true);
+        UI.renderAll();
+        window.scrollTo(0, 0);
+        $('intro-title').focus({ preventScroll: true });
+    },
 
     status(status) {
         this.savedStatus = status;
@@ -560,16 +655,22 @@ const GameApp = {
             this.errorMessage = status.code;
             Sys.toast(saveStatus.textContent);
         }
-        if (status.code === 'ownership-acquired' && !this.recoveryPending) this.resume(true);
+        if (status.code === 'ownership-acquired' && !this.recoveryPending) {
+            if (this.playing) this.resume(true);
+            else this.prepareIntroProgress();
+        }
         if (['synced', 'imported', 'reset'].includes(status.code)) {
+            if (status.code === 'imported' && !Data.state.hasStarted && this.playing) this.goToIntro(false);
+            if (status.code === 'imported' && !this.playing) this.prepareIntroProgress();
             Logic.reconcile(Date.now());
             VFX.reset();
         }
         UI.renderAll();
+        this.renderIntro(['synced', 'imported', 'reset'].includes(status.code));
     },
 
     resume(offline = true) {
-        if (!this.booted || !Data.canWrite || this.recoveryPending) return;
+        if (!this.playing || !this.booted || !Data.canWrite || this.recoveryPending) return;
         const now = Date.now();
         const from = Math.min(now, Data.state.lastActiveAt);
         Logic.reconcile(from);
@@ -583,6 +684,11 @@ const GameApp = {
 
     flush(force = false) {
         if (!this.booted || !Data.canWrite || this.recoveryPending) return;
+        if (!this.playing) {
+            Data.state.lastActiveAt = Date.now();
+            Data.save();
+            return;
+        }
         if (!document.hidden || force) {
             const now = Date.now();
             Logic.advance(Math.min(now, Data.state.lastActiveAt), now, { render: false });
@@ -593,7 +699,7 @@ const GameApp = {
     frame(now) {
         const elapsed = this.lastVisual ? Math.max(0, now - this.lastVisual) : 0;
         this.lastVisual = now;
-        if (!document.hidden && Data.canWrite && !this.recoveryPending) {
+        if (this.playing && !document.hidden && Data.canWrite && !this.recoveryPending) {
             const clock = Date.now();
             Logic.advance(Math.min(clock, Data.state.lastActiveAt), clock, { render: false });
             VFX.update(elapsed);
@@ -617,7 +723,8 @@ const GameApp = {
         this.installEvents();
         Ach.check();
         Logic.reconcile(Math.min(Date.now(), Data.state.lastActiveAt));
-        if (Data.canWrite && !this.recoveryPending) this.resume(true);
+        this.prepareIntroProgress();
+        this.renderIntro(true);
         UI.renderAll();
         this.status(this.savedStatus || { code: 'ready' });
         if (this.recoveryPending) Sys.showDialog('recovery-dialog', 'recovery-download');
@@ -630,15 +737,34 @@ const GameApp = {
 
     installEvents() {
         document.addEventListener('pointerdown', () => { void Sys.init(); }, { capture: true });
-        $('battle-view').addEventListener('pointerdown', event => {
-            if (!Data.canWrite || this.recoveryPending || document.hidden) return;
+        $('btn-start-game').addEventListener('click', () => this.enterGame());
+        $('btn-return-intro').addEventListener('click', () => this.goToIntro());
+        let touchAttack = null;
+        const attackAt = event => {
+            if (!this.playing || !Data.canWrite || this.recoveryPending || document.hidden) return;
             const point = VFX.point(event.clientX, event.clientY);
             Combat.attack(point.x, point.y);
+        };
+        $('battle-view').addEventListener('pointerdown', event => {
+            if (event.pointerType === 'touch') {
+                if (event.isPrimary === false) return;
+                touchAttack = { id: event.pointerId, x: event.clientX, y: event.clientY };
+                return;
+            }
+            attackAt(event);
         });
+        $('battle-view').addEventListener('pointerup', event => {
+            if (event.pointerType !== 'touch' || !touchAttack || event.pointerId !== touchAttack.id) return;
+            const point = touchAttack;
+            touchAttack = null;
+            if (Math.hypot(event.clientX - point.x, event.clientY - point.y) <= 12) attackAt(event);
+        });
+        $('battle-view').addEventListener('pointercancel', () => { touchAttack = null; });
+        window.addEventListener('scroll', () => { touchAttack = null; }, { passive: true });
         $('battle-view').addEventListener('keydown', event => {
             if (!['Enter', ' '].includes(event.key)) return;
             event.preventDefault();
-            if (event.repeat || !Data.canWrite || this.recoveryPending) return;
+            if (event.repeat || !this.playing || !Data.canWrite || this.recoveryPending) return;
             void Sys.init();
             const point = VFX.center();
             Combat.attack(point.x, point.y);

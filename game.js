@@ -265,7 +265,7 @@ const Logic = {
     bossMax: 30,
     bossActive: false,
     isNight: false,
-    canAct() { return Data.canWrite !== false && !(typeof document !== 'undefined' && document.hidden); },
+    canAct() { return Data.canWrite !== false && (typeof GameApp === 'undefined' || GameApp.playing) && !(typeof document !== 'undefined' && document.hidden); },
     catchUp(now = Date.now()) {
         if (this.canAct() && Data.state.lastActiveAt < now) return this.advance(Data.state.lastActiveAt, now);
         return Simulation.events();
@@ -439,6 +439,8 @@ const Logic = {
         candidate.xpRemainder = previous.xpRemainder;
         candidate.skill = { ...previous.skill };
         candidate.sound = previous.sound;
+        candidate.character = previous.character;
+        candidate.hasStarted = previous.hasStarted;
         candidate.revision = previous.revision;
         if (!this.commit(candidate)) return false;
         this.sync();

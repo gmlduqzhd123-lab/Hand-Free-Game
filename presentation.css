@@ -1,0 +1,211 @@
+/* Welcome cover and readable, spacious gameplay. Loaded after the original theme. */
+body { padding:32px 24px; font-size:16px; background:radial-gradient(ellipse at 16% 0,#fff8e8 0,transparent 65%),#f1e9dc; }
+[hidden] { display:none!important; }
+#intro-screen { width:min(1180px,100%); margin:auto; color:#40364f; }
+.intro-topline { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:0 0 34px; border-bottom:1px solid #d8c7ad; }
+.intro-brand { display:inline-flex; align-items:center; gap:12px; color:#44364f; text-decoration:none; font-weight:800; font-size:18px; letter-spacing:-.5px; }
+.intro-brand-mark { display:grid; place-items:center; width:42px; height:42px; border-radius:13px; background:#443751; color:#f7d58e; font-size:30px; }
+.intro-edition { color:#958371; font-size:14px; }
+.intro-layout { display:grid; grid-template-columns:1fr 1fr; align-items:center; gap:64px; padding:46px 0 40px; }
+.intro-kicker { display:flex; align-items:center; gap:9px; font-size:14px; color:#8b725b; font-weight:650; letter-spacing:.3px; }
+.intro-kicker span { color:#c99d5d; font-size:22px; }
+#intro-title { font-family:Georgia,'Malgun Gothic','Apple SD Gothic Neo',serif; font-size:66px; line-height:1.15; font-weight:850; letter-spacing:-3px; color:#493b54; margin:16px 0 24px; }
+#intro-title em { color:#8b6e95; font-style:normal; }
+.intro-description { font-size:22px; line-height:1.7; color:#766579; letter-spacing:-.5px; }
+.intro-detail { font-size:16px; line-height:1.8; color:#a08b81; margin:14px 0 26px; max-width:440px; }
+.character-picker { border:0; padding:0; margin:0; min-width:0; }
+.character-picker legend { font-size:16px; font-weight:750; color:#6a596d; margin-bottom:12px; padding:0; }
+.character-options { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.character-option { position:relative; min-width:0; cursor:pointer; }
+.character-option input { position:absolute; opacity:0; width:1px; height:1px; }
+.character-card { display:flex; align-items:center; gap:8px; min-height:110px; padding:10px; border:1px solid #d4c1a5; border-radius:15px; background:#fff9eb; box-shadow:0 3px 0 #e4d5bc; position:relative; transition:border-color 150ms,background 150ms; }
+.character-card img { width:64px; height:79px; object-fit:contain; flex:none; }
+.character-card strong { display:block; font-size:18px; font-weight:800; color:#736176; }
+.character-card small { display:block; font-size:12px; color:#aa9589; margin-top:5px; line-height:1.6; }
+.character-check { position:absolute; right:10px; top:9px; display:grid; place-items:center; width:19px; height:19px; border:1px solid #d8c8ae; border-radius:50%; color:transparent; font-size:11px; }
+.character-option input:checked+.character-card { border:2px solid #849b80; padding:9px; background:#f1f5e6; box-shadow:0 3px 0 #cad5b5; }
+.character-option input:checked+.character-card .character-check { background:#859e80; border-color:#859e80; color:#fff; }
+.character-option input:focus-visible+.character-card { outline:3px solid #9372b0; outline-offset:4px; }
+.character-note { font-size:13px; color:#a49383; line-height:1.7; margin:12px 0 8px; }
+.intro-progress { font-size:14px; color:#768c72; margin:12px 0; line-height:1.6; }
+.intro-progress:empty { display:none; }
+.intro-start { width:100%; min-height:60px; margin-top:14px; display:flex; justify-content:center; align-items:center; gap:18px; padding:15px; border:1px solid #574463; border-radius:13px; background:#66516f; color:#fff4dd; box-shadow:0 4px 0 #c7b99d; font-size:18px; font-weight:800; letter-spacing:.3px; }
+.intro-start .icon { width:24px; height:24px; }
+.intro-start:hover:not(:disabled) { background:#55435f; }
+.intro-start:disabled { opacity:.65; cursor:default; }
+.intro-start-note { text-align:center; font-size:13px; line-height:1.7; color:#ad9784; margin-top:15px; }
+.intro-error { font-size:14px; color:#b16f70; line-height:1.7; margin-top:12px; }
+.intro-error:empty { display:none; }
+.intro-art { margin:0; border:1px solid #b39876; border-radius:28px; background:#3e344e; box-shadow:0 8px 0 #d5c2a2,0 24px 54px #6e4e4213; overflow:hidden; transform:rotate(1deg); }
+.intro-art-top { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:17px 22px; color:#e8d1ac; font-size:14px; font-weight:650; border-bottom:2px solid #b8986b; }
+.intro-art-top span+span { color:#bdaac9; font-weight:500; }
+.intro-classroom { position:relative; height:450px; background:#ebd4ae url('assets/classroom.svg') center/cover no-repeat; isolation:isolate; overflow:hidden; }
+.intro-scene-label { position:absolute; top:20px; left:20px; padding:6px 10px; border:1px solid #d2b795; border-radius:20px; background:#fff1dccc; color:#9c806f; font-size:13px; }
+.intro-teacher { position:absolute; width:270px; height:332px; object-fit:contain; bottom:46px; left:14px; z-index:2; }
+.intro-male { display:none; }
+#intro-screen:has(#character-male:checked) .intro-male { display:block; }
+#intro-screen:has(#character-male:checked) .intro-female { display:none; }
+.intro-slime { position:absolute; width:170px; height:170px; right:15px; bottom:45px; z-index:2; object-fit:contain; }
+.intro-spell { position:absolute; left:57%; bottom:44%; font-size:40px; color:#fff4ac; text-shadow:0 0 12px #ffdc84; z-index:3; }
+.intro-art-caption { position:absolute; bottom:16px; left:0; right:0; text-align:center; font-size:13px; color:#8f6c6a; background:#f5e8cc80; padding:5px; }
+.intro-art figcaption { display:flex; align-items:center; justify-content:center; gap:10px; padding:22px 14px; color:#d8c2de; font-size:16px; letter-spacing:.1px; }
+.intro-caption-star { color:#f3cd81; font-size:25px; }
+.intro-features { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:28px; padding:26px 10px 0; border-top:1px solid #d8c7ad; color:#a18d80; font-size:14px; }
+.intro-features span { display:inline-flex; align-items:center; gap:7px; }
+.intro-features .icon { width:19px; height:19px; color:#9d9e83; }
+/* No height-dependent compression: the page scrolls naturally on small screens. */
+#game-app { width:min(1260px,100%); }
+#header { padding:20px 24px; margin-bottom:22px; }
+.topline { flex-wrap:wrap; gap:14px; margin-bottom:18px; }
+.brand h1 { font-size:26px; }
+.brand p { display:block; font-size:14px; margin-top:4px; }
+.brand-mark { width:48px; height:48px; }
+.header-actions { gap:12px; flex-wrap:wrap; }
+.work-clock { font-size:16px; }
+.work-clock .icon { display:block; width:18px; height:18px; }
+.clock-target { display:inline; font-size:14px; }
+#btn-sound { width:46px; height:46px; }
+.return-intro-button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:46px; padding:9px 13px; border:1px solid #87708e; border-radius:11px; background:#51425f; color:#e5d3e8; font-size:14px; font-weight:650; }
+.return-intro-button .icon { width:19px; height:19px; }
+.overview-row { grid-template-columns:1.3fr 1fr; gap:24px; }
+.progress-label { gap:10px; margin-bottom:8px; }
+#player-level { font-size:24px; }
+#player-xp,#level-notice { font-size:14px; }
+#player-xp-track { height:10px; }
+.growth-caption { display:block; font-size:14px; }
+.hud-badge { padding:13px 16px; flex-direction:column; align-items:flex-start; }
+.resource-label { font-size:14px; gap:6px; }
+.resource-label .icon { width:18px; height:18px; }
+.hud-badge strong { font-size:24px; margin-top:4px; }
+.game-layout { grid-template-columns:1.4fr 1fr; gap:22px; }
+.play-column { display:flex; flex-direction:column; gap:14px; }
+#battle-view { padding:12px; }
+.battle-top { margin-bottom:12px; gap:12px; }
+.battle-top .eyebrow,.live-status { font-size:14px; }
+.battle-top .icon { width:18px; height:18px; }
+.battle-body { height:460px; overflow:hidden; }
+.scene-caption { display:inline-block; font-size:14px; padding:6px 10px; }
+#teacher-hero { left:20px; bottom:24px; width:280px; height:346px; --hero-hop:-8px; }
+#teacher-sprite { width:100%; height:calc(100% - 25px); object-fit:contain; }
+.hero-badge,.hero-badge strong { font-size:14px; }
+.hero-badge { padding:3px 10px; }
+.hero-celebration { font-size:18px; }
+#monster { width:190px; height:190px; right:27px; bottom:21px; }
+.battle-copy { width:224px; top:18px; right:18px; padding:12px; }
+.battle-label { display:block; font-size:13px; }
+#mob-name { font-size:24px; margin:4px 0 10px; }
+.hp-label,.hp-label strong { font-size:14px; margin-bottom:6px; }
+.hp-track { height:10px; }
+#next-boss { display:block; font-size:13px; margin-top:8px; }
+.battle-foot { font-size:14px; min-height:36px; margin-top:10px; }
+#boss-timer-wrap { bottom:13px; left:15px; right:15px; font-size:14px; }
+.boss-track { height:4px; }
+#attack-projectile { font-size:38px; --projectile-travel:250px; }
+.combat-metrics>div { flex-direction:row; padding:14px 17px; }
+.metric-label,.combat-metrics small { font-size:14px; }
+.metric-label .icon { width:18px; height:18px; }
+.combat-metrics strong { font-size:25px; }
+.skill-btn,#btn-s2 { min-height:90px; padding:14px; gap:12px; }
+.skill-icon { width:44px; height:44px; }
+.skill-icon .icon { width:26px; height:26px; }
+.s-title { font-size:18px; }.s-sub { display:block; font-size:13px; }.skill-state { font-size:14px; }
+.goal-card { display:flex; font-size:14px; }.goal-card .eyebrow,#day-progress-text { font-size:14px; }.goal-card strong { font-size:16px; }
+.tab-btn { height:58px; font-size:16px; gap:7px; }.tab-btn .icon { width:19px; height:19px; }
+.tab-view { padding:22px 20px; max-height:none; overflow:visible; }
+#tab-stat .panel-heading { display:flex; }.panel-heading { margin-bottom:18px; }
+.panel-heading h2 { font-size:24px; }.panel-heading .eyebrow { display:block; font-size:13px; }.panel-caption { display:block; font-size:13px; }
+.upgrade-list { gap:12px; }.up-card { min-height:98px; padding:13px 12px; gap:12px; }
+.upgrade-icon { width:40px; height:44px; }.upgrade-icon .icon { width:24px; height:24px; }
+.up-title { font-size:17px; gap:8px; }.upgrade-level { font-size:14px; }.up-stat { font-size:14px; margin-top:5px; }.up-desc { display:block; font-size:13px; }
+.up-btn { min-width:78px; min-height:48px; font-size:15px; padding:9px; }.up-btn .icon { width:17px; height:17px; }
+#tab-stat .help-details { display:block; }.help-details,.help-details p { font-size:14px; }.help-details summary { padding:12px 0; }
+#tab-stat .quiet-note { display:flex; }.quiet-note { font-size:14px; padding-top:13px; }
+.gacha-banner strong,.relic-name,.ach-title,.setting-header { font-size:17px; }
+.gacha-banner p,.relic-eff,.relic-status,.relic-owned,.ach-desc,.setting-panel>p,.save-note,.prestige-preview,.reset-row,.reset-button { font-size:14px; }
+.relic-item { padding:18px 13px; }.btn-claim,.btn-half { min-height:46px; font-size:15px; }.backup-actions { flex-wrap:wrap; }
+.app-footnote { display:flex; font-size:13px; }
+@media (min-width:700px) and (max-width:1050px) {
+    .intro-layout { gap:30px; }.intro-classroom { height:390px; }#intro-title { font-size:54px; }
+    .intro-teacher { width:230px; height:283px; left:-4px; }.intro-slime { width:128px; height:128px; right:5px; }
+    .character-card { padding:8px; }.character-card img { width:52px; height:65px; }.character-card strong { font-size:17px; }.character-card small { font-size:11px; }
+    .game-layout { grid-template-columns:1.2fr 1fr; }.battle-body { height:400px; }#teacher-hero { width:220px; height:274px; left:3px; }#monster { width:145px; height:145px; right:12px; }
+    .battle-copy { width:200px; right:12px; }.scene-caption { display:none; }.combat-metrics>div { flex-direction:column; align-items:flex-start; padding:12px; gap:4px; }
+    .skill-btn,#btn-s2 { padding:12px 9px; gap:8px; }.skill-icon { width:35px; height:39px; }.s-title { font-size:16px; }.s-sub { font-size:13px; }
+    .tab-view { padding:18px 13px; }.panel-heading h2 { font-size:21px; }.panel-caption { display:none; }.up-card { padding:12px 8px; gap:8px; }.upgrade-icon { width:32px; height:38px; }.up-btn { min-width:66px; }.up-title { font-size:16px; }
+    #attack-projectile { --projectile-travel:170px; }
+}
+@media (max-width:699px) {
+    body { padding:18px 14px 28px; }
+    .intro-topline { padding-bottom:18px; }.intro-brand { font-size:15px; gap:8px; }.intro-brand-mark { width:34px; height:34px; font-size:25px; border-radius:11px; }.intro-edition { font-size:12px; }
+    .intro-layout { grid-template-columns:1fr; gap:0; padding:26px 0 28px; }.intro-copy { display:contents; }.intro-copy>* { grid-column:1; }.intro-kicker { font-size:13px; }
+    #intro-title { font-size:46px; letter-spacing:-2px; margin:12px 0 16px; }.intro-description { font-size:19px; line-height:1.55; }
+    .intro-detail { font-size:15px; line-height:1.7; margin:8px 0 23px; max-width:none; }
+    .intro-art { grid-row:4; grid-column:1; margin:23px 0 18px; transform:none; border-radius:20px; }
+    .intro-art-top { padding:11px 14px; font-size:13px; }.intro-classroom { height:230px; }
+    .intro-scene-label { top:12px; left:12px; font-size:12px; padding:4px 8px; }
+    .intro-teacher { width:172px; height:211px; bottom:20px; left:8px; }.intro-slime { width:112px; height:112px; right:17px; bottom:26px; }
+    .intro-spell { left:53%; bottom:45%; font-size:29px; }.intro-art-caption { display:none; }.intro-art figcaption { padding:11px; font-size:14px; gap:8px; }.intro-caption-star { font-size:22px; }
+    .character-picker legend { font-size:16px; margin-bottom:10px; }.character-options { gap:10px; }.character-card { min-height:96px; padding:9px 6px; gap:5px; border-radius:12px; }.character-card img { width:57px; height:70px; }.character-card strong { font-size:16px; }.character-card small { font-size:11px; margin-top:3px; }
+    .character-option input:checked+.character-card { padding:8px 5px; }.character-note { font-size:13px; margin:11px 0 3px; }.character-check { right:7px; top:7px; width:17px; height:17px; }
+    .intro-start { min-height:56px; font-size:17px; margin-top:13px; }.intro-start-note { font-size:12px; }.intro-features { font-size:13px; gap:13px 22px; padding-top:22px; }
+    #game-app { max-width:600px; }#header { padding:14px; margin-bottom:16px; border-radius:15px; }.topline { gap:13px; margin-bottom:14px; }
+    .brand { gap:9px; }.brand h1 { font-size:21px; letter-spacing:-.8px; }.brand p { font-size:13px; display:block; }.brand-mark { width:42px; height:42px; font-size:18px; }
+    .header-actions { width:100%; gap:9px; flex-wrap:nowrap; justify-content:space-between; }.work-clock { font-size:15px; }.work-clock .icon { display:block; width:16px; height:16px; }.clock-target { display:none; }#btn-sound { width:44px; height:44px; flex:none; }#btn-sound .icon { width:20px; height:20px; }
+    .return-intro-button { font-size:13px; min-height:44px; padding:9px 10px; }.return-intro-button .icon { width:17px; height:17px; }
+    .overview-row { grid-template-columns:1fr; gap:13px; }#player-progress { grid-row:2; }.progress-label { gap:7px; margin-bottom:6px; }#player-level { font-size:22px; }#player-xp { font-size:13px; }#level-notice { font-size:13px; }#player-xp-track { height:8px; }.growth-caption { display:block; font-size:13px; margin-top:6px; }
+    .hud-badge { padding:9px 10px; flex-direction:column; align-items:flex-start; justify-content:flex-start; }.resource-label { font-size:13px; gap:4px; }.resource-label .icon { width:15px; height:15px; }.hud-badge strong { font-size:20px; margin-top:3px; }
+    .game-layout { grid-template-columns:1fr; gap:17px; }.play-column { display:flex; gap:12px; }#battle-view { padding:9px; border-radius:15px; }.battle-top { margin-bottom:10px; }.battle-top .eyebrow,.live-status { font-size:13px; }.battle-top .icon { width:15px; height:15px; }
+    .battle-body { height:300px; }.scene-caption { display:none; }#teacher-hero { width:176px; height:218px; left:2px; bottom:17px; --hero-hop:-6px; }#teacher-sprite { height:calc(100% - 24px); }
+    .hero-badge,.hero-badge strong { font-size:13px; }.hero-badge { padding:3px 9px; }.hero-celebration { font-size:15px; }
+    #monster { width:115px; height:115px; right:16px; bottom:15px; }.battle-copy { width:164px; top:12px; right:10px; padding:10px; }.battle-label { display:block; font-size:13px; }#mob-name { font-size:20px; margin:4px 0 8px; }.hp-label,.hp-label strong { font-size:13px; margin-bottom:5px; }.hp-track { height:8px; }#next-boss { display:block; font-size:13px; margin-top:7px; line-height:1.5; }
+    .battle-foot { font-size:13px; min-height:31px; margin-top:9px; }.battle-foot>.icon { width:16px; height:16px; }.keyboard-hint { display:none; }#boss-timer-wrap { font-size:13px; bottom:11px; left:12px; right:12px; }.boss-track { height:3px; }
+    #attack-projectile { font-size:29px; left:35%; top:54%; --projectile-travel:140px; }
+    .combat-metrics>div { padding:12px 11px; flex-direction:column; align-items:flex-start; gap:4px; }.metric-label { font-size:13px; gap:5px; }.metric-label .icon { width:16px; height:16px; }.combat-metrics strong { font-size:23px; }.combat-metrics small { font-size:13px; }
+    #skill-dock { gap:9px; }.skill-btn,#btn-s2 { padding:12px 9px; min-height:98px; align-items:flex-start; gap:7px; }.skill-icon { width:32px; height:36px; }.skill-icon .icon { width:22px; height:22px; }.s-title { font-size:16px; }.s-sub { display:block; font-size:13px; line-height:1.5; }.skill-state { font-size:13px; margin-top:4px; }.skill-copy { gap:3px; }
+    .goal-card { display:none; }#tab-nav { padding:0 5px; }.tab-btn { height:54px; font-size:14px; gap:4px; }.tab-btn .icon { width:16px; height:16px; }.tab-view { padding:17px 12px; max-height:none; overflow:visible; }
+    #tab-stat .panel-heading { display:flex; }.panel-heading { margin-bottom:14px; }.panel-heading h2 { font-size:22px; }.panel-heading .eyebrow { display:none; }.panel-caption { display:none; }
+    .upgrade-list { gap:11px; }.up-card { min-height:88px; padding:12px 9px; gap:9px; }.upgrade-icon { width:31px; height:39px; }.upgrade-icon .icon { width:20px; height:20px; }.up-title { font-size:16px; gap:5px; }.upgrade-level { font-size:13px; }.up-stat { font-size:14px; margin-top:4px; }.up-desc { display:block; font-size:13px; }.up-btn { min-width:68px; min-height:46px; font-size:14px; padding:8px; }.up-btn .icon { width:15px; height:15px; }
+    #tab-stat .help-details { display:block; }.help-details,.help-details p { font-size:14px; }.help-details { margin-top:14px; }.help-details summary { padding:11px 0; }#tab-stat .quiet-note { display:flex; }.quiet-note { font-size:13px; padding-top:12px; margin-top:10px; }
+    .app-footnote { display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center; font-size:13px; margin-top:20px; }.gacha-banner p,.relic-eff,.relic-status,.relic-owned,.ach-desc,.setting-panel>p,.save-note,.prestige-preview,.reset-row,.reset-button { font-size:13px; }.relic-status,.relic-owned { position:static; display:block; margin-top:7px; }.relic-owned { display:none; }.relic-item.unlocked .relic-owned { display:block; }.relic-item.unlocked .relic-status { display:none; }
+}
+@media (max-width:359px) {
+    body { padding:14px 10px 24px; }.intro-brand { font-size:14px; }.intro-edition { display:none; }#intro-title { font-size:41px; }.intro-description { font-size:18px; }.intro-classroom { height:207px; }.intro-teacher { width:158px; height:194px; bottom:15px; left:0; }.intro-slime { width:99px; height:99px; right:11px; bottom:20px; }
+    .character-card { min-height:97px; gap:2px; }.character-card img { width:48px; height:59px; }.character-card small { font-size:11px; }.character-card strong { font-size:16px; }
+    #header { padding:12px 10px; }.brand h1 { font-size:19px; }.brand p { font-size:13px; }.brand-mark { width:37px; height:37px; }.resource-label { font-size:13px; gap:3px; }.resource-label .icon { width:13px; height:13px; }.hud-badge { padding:8px 7px; }.hud-badge strong { font-size:19px; }
+    #player-xp { font-size:13px; }#level-notice { font-size:13px; }.progress-label { flex-wrap:wrap; }.return-intro-button { padding:9px 8px; }.work-clock .icon { display:none; }
+    .battle-body { height:290px; }#teacher-hero { width:144px; height:181px; left:0; bottom:18px; }#monster { width:97px; height:97px; right:10px; bottom:15px; }.battle-copy { width:147px; right:8px; padding:8px; }#mob-name { font-size:19px; }.battle-label { font-size:13px; }#next-boss { font-size:13px; }.hero-badge,.hero-badge strong { font-size:13px; }
+    .skill-btn,#btn-s2 { flex-direction:column; gap:7px; padding:11px 10px; min-height:145px; }.s-title { font-size:16px; }.tab-btn { font-size:13px; gap:3px; }.tab-btn .icon { width:14px; height:14px; }
+    .up-card { padding:11px 8px; gap:7px; }.upgrade-icon { width:25px; height:35px; }.up-btn { min-width:57px; font-size:13px; }.up-title { font-size:15px; }.up-desc { font-size:13px; }.up-stat { font-size:13px; }
+    #attack-projectile { --projectile-travel:100px; }
+}
+@media (max-height:450px) and (min-width:500px) {
+    .intro-layout { display:grid; grid-template-columns:1fr 1fr; gap:24px; }.intro-copy { display:block; }.intro-art { grid-row:auto; grid-column:auto; align-self:start; margin-top:16px; }#intro-title { font-size:42px; }.intro-classroom { height:255px; }
+    .intro-teacher { width:174px; height:214px; bottom:20px; left:0; }.intro-slime { width:94px; height:94px; right:8px; }.intro-description { font-size:18px; }.intro-detail { font-size:15px; }.character-card { flex-direction:column; align-items:flex-start; }.character-card img { height:70px; width:57px; }
+    .game-layout { grid-template-columns:1fr; }.overview-row { grid-template-columns:1fr; }#player-progress { grid-row:2; }.battle-body { height:320px; }#teacher-hero { width:210px; height:257px; left:12px; bottom:20px; }#monster { width:148px; height:148px; right:30px; bottom:17px; }.battle-copy { width:202px; right:15px; }
+    #attack-projectile { --projectile-travel:205px; }
+}
+/* Keep supporting copy readable even at 320px and in landscape. */
+.intro-edition,.intro-kicker,.intro-scene-label,.intro-art-top,.intro-art-caption,.intro-art figcaption,.intro-features,.intro-start-note,.character-note,.character-card small { font-size:14px; }
+.intro-detail { color:#76665f; }.character-note,.intro-start-note,.intro-features { color:#78675e; }.character-card small { color:#76645f; }.intro-edition { color:#7e6c60; }
+.character-card { min-height:120px; }.character-option input:checked+.character-card { min-height:120px; }
+.brand p,#player-xp,#level-notice,.growth-caption,.resource-label,.hero-badge,.hero-badge strong,.battle-top .eyebrow,.live-status,.battle-label,.hp-label,.hp-label strong,#next-boss,.battle-foot,#boss-timer-wrap,.metric-label,.combat-metrics small,.s-sub,.skill-state,.upgrade-level,.up-stat,.up-desc,.help-details,.help-details p,.quiet-note,.gacha-banner p,.relic-eff,.relic-status,.relic-owned,.ach-desc,.setting-panel>p,.save-note,.prestige-preview,.reset-row,.reset-button,.app-footnote,.panel-caption,.panel-heading .eyebrow { font-size:14px; }
+.tab-btn { font-size:16px; }.up-title { font-size:16px; }#mob-name { font-size:24px; }.up-btn { font-size:15px; min-height:46px; }.return-intro-button { font-size:14px; }
+.character-card small { line-height:1.5; }.intro-start-note,.character-note { line-height:1.7; }
+.character-option input { opacity:1; width:20px; height:20px; top:10px; right:10px; z-index:2; margin:0; accent-color:#859e80; cursor:pointer; }
+.character-check { display:none; }
+.keyboard-hint,kbd { font-size:14px; }
+.app-credit { font-size:14px; }
+.reset-button { min-height:44px; }.app-footnote { color:#7f6b85; }
+.progress-label { flex-wrap:wrap; }.hud-badge strong { max-width:100%; overflow-wrap:anywhere; }
+dialog p,dialog label,dialog textarea,#import-error,.session-card p { font-size:14px; }dialog h2,.session-card h2 { font-size:22px; }.dialog-button { font-size:16px; min-height:46px; }
+@media (max-width:699px) {
+    .battle-body { height:320px; }#mob-name { font-size:22px; }.tab-btn { gap:4px; }.tab-btn .icon { width:15px; height:15px; }
+    .intro-scene-label { left:auto; right:12px; z-index:3; }
+    .skill-btn,#btn-s2 { min-height:112px; }.s-sub { line-height:1.55; }.skill-state { margin-top:5px; }
+    .character-card img { width:55px; height:68px; }.character-card small { font-size:14px; }.intro-features { gap:14px; }
+}
+@media (max-width:359px) {
+    #mob-name { font-size:20px; }.battle-body { height:310px; }.tab-btn { gap:3px; }.tab-btn .icon { width:13px; height:13px; }
+    .character-card img { width:43px; height:53px; }.up-title { font-size:16px; }.up-btn { min-width:57px; font-size:14px; }.up-card { min-height:103px; }
+    .skill-btn,#btn-s2 { min-height:160px; }.hero-badge { padding:3px 7px; }
+}

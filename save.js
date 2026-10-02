@@ -66,7 +66,8 @@ const Data = {
             autoRemainder: 0,
             player: { level: 1, xp: 0 },
             xpRemainder: 0,
-            lastActiveAt: Date.now(), savedAt: 0, revision: 0, sound: true
+            lastActiveAt: Date.now(), savedAt: 0, revision: 0, sound: true,
+            character: 'female', hasStarted: false
         };
     },
 
@@ -102,6 +103,8 @@ const Data = {
         const state = this.createDefault();
         if (raw.version === 3 || raw.version === 4) {
             for (const field of Object.keys(state)) {
+                // Optional presentation fields keep existing v3/v4 saves valid.
+                if (['character', 'hasStarted'].includes(field)) continue;
                 if (raw.version === 3 && ['player', 'xpRemainder'].includes(field)) continue;
                 if (!own(raw, field)) throw new SaveValidationError(`${field}의 저장 정보가 누락되었습니다.`);
             }
@@ -183,6 +186,14 @@ const Data = {
         // A clock change or a future timestamp must not postpone all future progress.
         state.lastActiveAt = Math.min(Date.now(), state.lastActiveAt);
         if (own(raw, 'sound')) state.sound = boolean(raw.sound, 'sound');
+        // Older saves already represent a played game and retain away rewards.
+        state.hasStarted = own(raw, 'hasStarted') ? boolean(raw.hasStarted, 'hasStarted') : true;
+        if (own(raw, 'character')) {
+            if (!['female', 'male'].includes(raw.character)) {
+                throw new SaveValidationError('선생님 캐릭터의 선택이 올바르지 않습니다.');
+            }
+            state.character = raw.character;
+        }
         if (own(raw, 'autoRemainder')) {
             state.autoRemainder = number(raw.autoRemainder, 'autoRemainder', 1);
             if (state.autoRemainder >= 1) throw new SaveValidationError('자동 공격 시간은 1초 미만이어야 합니다.');
@@ -356,6 +367,9 @@ const Data = {
 
     reset() {
         const candidate = this.createDefault();
+        // Reset game progress while retaining the chosen cosmetic appearance.
+        candidate.character = this.state && this.state.character === 'male' ? 'male' : 'female';
+        candidate.hasStarted = Boolean(this.state && this.state.hasStarted === true);
         if (!this.save(candidate, { replaceRecovery: this.recoveryRaw !== null, statusCode: 'reset' })) {
             return { ok: false, code: this._code, error: this._message };
         }
