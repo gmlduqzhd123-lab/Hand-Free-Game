@@ -390,7 +390,9 @@ def main():
                     "reloadBonus": 0, "resetRestoresIdleStart": True}
 
         def layouts():
-            sizes = [(320, 568), (375, 667), (390, 844), (412, 915), (768, 1024),
+            sizes = [(320, 568), (320, 601), (375, 667), (390, 600), (390, 601), (390, 650), (390, 651),
+                (390, 741), (390, 780), (390, 820), (320, 821), (390, 821), (390, 840), (390, 841),
+                (390, 844), (412, 915), (768, 1024),
                 (844, 320), (844, 360), (1024, 768), (1280, 720), (1440, 900)]
             checked = []
             for width, height in sizes:
@@ -535,7 +537,7 @@ def main():
             directory = Path(args.screenshots)
             directory.mkdir(parents=True, exist_ok=True)
             images = []
-            for width, height in [(390, 844), (1440, 900), (320, 568), (844, 320)]:
+            for width, height in [(390, 844), (390, 780), (1440, 900), (320, 568), (844, 320)]:
                 with fresh({"width": width, "height": height}) as (_, page, _):
                     # Stop time at the current frame so an image is a stable
                     # layout artifact rather than a capture of random combat.
