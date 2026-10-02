@@ -79,6 +79,9 @@ const Simulation = {
     },
     expireBoss(state, events, now) {
         if (!state.mob.boss || state.mob.deadline > now) return false;
+        // A milestone reached earlier in this frame or away interval must not
+        // disappear when failure rolls the adventure back by one enemy.
+        Ach.evaluate(state);
         state.min = Math.max(0, state.min - 1);
         state.kills = Math.max(0, state.kills - 1);
         this.spawn(state, false, now);
@@ -88,8 +91,10 @@ const Simulation = {
     damage(state, rawDamage, now, events, options = {}) {
         let damage = GameLimits.finite(rawDamage);
         if (!(damage > 0)) return false;
-        const chance = this.getCriticalChance(state, now);
-        const critical = !options.auto && chance > 0 && (options.random || Math.random)() * 100 < chance;
+        // Automatic hits never crit. Avoid scanning equipment bonuses for every
+        // automatic second of a long away interval.
+        const chance = options.auto ? 0 : this.getCriticalChance(state, now);
+        const critical = chance > 0 && (options.random || Math.random)() * 100 < chance;
         if (critical) damage = GameLimits.multiply(damage, state.relic[1] ? 5 : 3);
         events.lastDamage = damage;
         events.damage = GameLimits.add(events.damage, damage);
@@ -311,8 +316,26 @@ const Logic = {
     bossActive: false,
     isNight: false,
     canAct() { return Data.canWrite !== false && (typeof GameApp === 'undefined' || GameApp.playing) && !(typeof document !== 'undefined' && document.hidden); },
+    rebaseClock(now = Date.now()) {
+        if (Data.canWrite === false || !Number.isFinite(now) || now < 0) return false;
+        const state = Data.state;
+        const anchor = Math.max(state.lastActiveAt, state.savedAt);
+        if (!(anchor > now)) return false;
+        const offset = anchor - now;
+        const shift = timestamp => timestamp > 0 ? Math.max(0, Math.ceil(timestamp - offset)) : 0;
+        // This accepts the actual present time only. Simulation's historical
+        // start/end timestamps must never be mistaken for a changed device clock.
+        state.lastActiveAt = shift(state.lastActiveAt);
+        state.savedAt = shift(state.savedAt);
+        for (const name of ['rush', 'night']) state.skill[name] = shift(state.skill[name]);
+        for (const name of ['rushUntil', 'nightUntil']) state.buff[name] = shift(state.buff[name]);
+        state.mob.deadline = shift(state.mob.deadline);
+        return true;
+    },
     catchUp(now = Date.now()) {
-        if (this.canAct() && Data.state.lastActiveAt < now) return this.advance(Data.state.lastActiveAt, now);
+        if (!this.canAct()) return Simulation.events();
+        this.rebaseClock(now);
+        if (Data.state.lastActiveAt < now) return this.advance(Data.state.lastActiveAt, now);
         return Simulation.events();
     },
     cloneState() { return JSON.parse(JSON.stringify(Data.state)); },
@@ -488,9 +511,9 @@ const Logic = {
             if (!candidate.extraRelics) candidate.extraRelics = Array(16).fill(false);
             candidate.extraRelics[chosen - 4] = true;
         }
-        if (candidate.mob.boss && chosen >= 4 && Catalog.relics[chosen].effect === 'bossSeconds') {
-            const seconds = Catalog.bonuses(candidate).bossSeconds - Catalog.bonuses(Data.state).bossSeconds;
-            candidate.mob.deadline = Math.min(8640000000000000, Math.ceil(candidate.mob.deadline + seconds * 1000));
+        if (candidate.mob.boss) {
+            const duration = Simulation.bossDuration(candidate) - Simulation.bossDuration(Data.state);
+            candidate.mob.deadline = Math.min(8640000000000000, Math.ceil(candidate.mob.deadline + duration));
         }
         Ach.evaluate(candidate);
         if (!this.commit(candidate)) return false;
@@ -505,7 +528,13 @@ const Logic = {
         if (!this.canAct()) return false;
         this.catchUp();
         if (Data.state.min <= 0) { this.toast('모험을 더 진행하면 연수학점을 받을 수 있어요.'); return false; }
-        if (typeof confirm === 'function' && !confirm(`현재 모험을 정산하고 다음 모험을 시작할까요?\n연수학점 🏅${typeof fNum === 'function' ? fNum(Data.state.min) : Data.state.min} 획득!`)) return false;
+        const approved = typeof confirm !== 'function' || confirm(`현재 모험을 정산하고 다음 모험을 시작할까요?\n연수학점 🏅${typeof fNum === 'function' ? fNum(Data.state.min) : Data.state.min} 획득!`);
+        // Native confirmation stops JavaScript, while wall-clock battle and XP
+        // time still pass. Settle it before preserving growth or resetting timers.
+        if (!this.canAct()) return false;
+        this.catchUp();
+        if (!approved) return false;
+        if (Data.state.min <= 0) { this.toast('보스 도전 결과를 반영했어요. 모험을 더 진행한 뒤 다시 정산하세요.'); return false; }
         const previous = this.cloneState();
         Ach.evaluate(previous);
         const candidate = Data.createDefault();

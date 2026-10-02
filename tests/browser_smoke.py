@@ -202,6 +202,49 @@ def main():
                 assert page.evaluate("Data.state.totalClicks") == paused["clicks"]
                 return {"menuSecondsExcluded": 120, "goldPreserved": 777, "fractionalTimePreserved": 0.25, "resumedXP": 18}
 
+        def welcome_clock_rollback_preserves_pause():
+            with fresh(clock=2000000000000) as (_,page,_):
+                page.evaluate("""() => {
+                    window.rollbackClock=Date.now(); Date.now=()=>rollbackClock;
+                    Data.state.player={level:7,xp:13}; Data.state.gold=777; Data.state.mob.hp=40;
+                    Data.state.autoRemainder=0.25; Data.state.xpRemainder=0.25;
+                    Data.state.lastActiveAt=rollbackClock; UI.renderAll();
+                }""")
+                assert page.evaluate("Combat.useSkill('rush') && Combat.useSkill('night')")
+                page.locator('#btn-return-intro').click()
+                assert page.evaluate('GameApp.playing') is False
+                paused_js="""({gold:Data.state.gold,gem:Data.state.gem,token:Data.state.token,
+                    kills:Data.state.kills,min:Data.state.min,clicks:Data.state.totalClicks,
+                    bossKills:Data.state.bossKills,player:{...Data.state.player},mob:{...Data.state.mob},
+                    autoRemainder:Data.state.autoRemainder,xpRemainder:Data.state.xpRemainder,
+                    xpBonusRemainder:Data.state.xpBonusRemainder})"""
+                timers_js="""({rush:Data.state.skill.rush,night:Data.state.skill.night,
+                    rushUntil:Data.state.buff.rushUntil,nightUntil:Data.state.buff.nightUntil})"""
+                paused=page.evaluate(paused_js)
+                timers=page.evaluate(timers_js)
+                page.evaluate('rollbackClock-=3600000; GameApp.flush()')
+                shifted=page.evaluate(timers_js)
+                assert shifted=={key:value-3600000 for key,value in timers.items()}, 'welcome flush did not rebase the skill timers exactly once'
+                assert page.evaluate('Data.state.lastActiveAt===rollbackClock')
+                assert page.evaluate(paused_js)==paused, 'clock rollback generated progress while in welcome'
+                page.evaluate('rollbackClock+=60000; GameApp.flush()')
+                assert page.evaluate(timers_js)==shifted, 'later welcome flush shifted the rebased skill timers again'
+                assert page.evaluate(paused_js)==paused, '60 seconds in welcome generated XP or automatic damage after rollback'
+                start_game(page)
+                page.evaluate('GameApp.enterGame(); GameApp.flush(); GameApp.resume(false)')
+                assert page.evaluate(paused_js)==paused, 'Start paid the paused welcome interval after a backward device clock change'
+                assert page.evaluate('Data.state.lastActiveAt===rollbackClock')
+                assert page.evaluate('Data.state.skill.rush')==shifted['rush']
+                assert page.evaluate('Data.state.skill.night')==shifted['night']
+                # The first actual resumed second still pays exactly one tick.
+                auto_damage=page.evaluate('Logic.getA_Dmg()')
+                page.evaluate('rollbackClock+=1000; Logic.catchUp(rollbackClock)')
+                assert page.evaluate('Data.state.player.xp')==paused['player']['xp']+5
+                assert page.evaluate('Data.state.mob.hp')==paused['mob']['hp']-auto_damage
+                assert page.evaluate('Data.state.totalClicks')==paused['clicks']
+                return {'clockMovedBackwardMs':3600000,'welcomeSecondsExcluded':60,
+                    'timersRebasedOnce':True,'resumedFirstSecondXP':5,'resumedFirstSecondAutoDamage':auto_damage}
+
         def selected_character_persists():
             with fresh(character="male") as (context, page, _):
                 clock = page.evaluate("""() => {
@@ -1206,6 +1249,62 @@ def main():
                 assert page.evaluate('RepeatInput.active===null')
                 return {'heldDistinctRelics':20,'stopsAtFundsAndCollectionCompletion':True,'totalGemCost':200}
 
+        def keyboard_purchase_after_tab_scroll():
+            details=[]
+            for mobile in [False, True]:
+                viewport={'width':390,'height':844} if mobile else {'width':1280,'height':900}
+                with fresh(viewport=viewport,mobile=mobile) as (_,page,_):
+                    freeze_progress(page)
+                    page.evaluate('Data.state.gold=1e12; UI.renderAll()')
+                    page.locator('#tab-button-shop').click()
+                    purchases=[]
+                    for index in [9,13,17]:
+                        previous=page.locator('.item-buy-button').nth(index-1)
+                        target=page.locator('.item-buy-button').nth(index)
+                        item=target.get_attribute('data-item-id')
+                        previous.scroll_into_view_if_needed()
+                        previous.focus()
+                        # Place the focused button at the bottom of the viewport;
+                        # its successor needs the browser's automatic focus scroll.
+                        previous.evaluate('el=>{const rect=el.getBoundingClientRect();window.scrollBy(0,rect.bottom-innerHeight+4)}')
+                        before=page.evaluate('id=>Catalog.itemLevel(id,Data.state)',item)
+                        # No focus/scroll settling wait is allowed between Tab
+                        # and Space: that delay previously masked the user bug.
+                        page.keyboard.press('Tab')
+                        page.keyboard.down('Space')
+                        page.wait_for_timeout(650)
+                        page.keyboard.up('Space')
+                        after=page.evaluate('id=>Catalog.itemLevel(id,Data.state)',item)
+                        assert page.evaluate('document.activeElement.id')==target.get_attribute('id')
+                        assert after-before>=4, f'immediate Tab/Space hold stopped after {after-before} purchases at {item} on {viewport}'
+                        page.wait_for_timeout(350)
+                        assert page.evaluate('id=>Catalog.itemLevel(id,Data.state)',item)==after, 'release left a keyboard purchase timer running'
+                        assert page.evaluate('RepeatInput.active===null')
+                        purchases.append({'id':item,'levelsAdded':after-before})
+                    details.append({'viewport':viewport,'mobile':mobile,'purchases':purchases})
+            return {'noDelayAfterTab':True,'releaseStops':True,'cases':details}
+
+        def keyboard_navigation_cancels_holds():
+            with fresh() as (_,page,_):
+                freeze_progress(page)
+                checked=[]
+                for trigger in ['wheel','PageUp','PageDown','Home','End','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']:
+                    page.locator('#battle-view').scroll_into_view_if_needed()
+                    page.locator('#battle-view').focus()
+                    page.wait_for_timeout(80)
+                    page.keyboard.down('Enter')
+                    page.wait_for_timeout(320)
+                    assert page.evaluate('RepeatInput.active!==null'), f'hold did not start before {trigger}'
+                    if trigger=='wheel': page.mouse.wheel(0,100)
+                    else: page.keyboard.press(trigger)
+                    stopped=page.evaluate('Data.state.totalClicks')
+                    page.keyboard.up('Enter')
+                    page.wait_for_timeout(350)
+                    assert page.evaluate('Data.state.totalClicks')==stopped, f'{trigger} left held attacks running'
+                    assert page.evaluate('RepeatInput.active===null'), f'{trigger} did not cancel keyboard hold'
+                    checked.append(trigger)
+                return {'keyboardNavigationCancels':checked}
+
         def touch_hold_and_scroll_cancel():
             with fresh(mobile=True) as (_,page,_):
                 freeze_progress(page)
@@ -1282,10 +1381,13 @@ def main():
             ("blur tab visibility and welcome stop held attacks", hold_interruptions),
             ("held upgrades and shop purchases repeat and stop at funds and caps", held_purchases_and_limits),
             ("held gacha collects 20 distinct relics and stops at funds and collection cap", held_gacha_no_duplicates),
+            ("immediate Tab focus scroll preserves keyboard purchase holds on desktop and mobile", keyboard_purchase_after_tab_scroll),
+            ("wheel and scroll keys cancel keyboard attack holds", keyboard_navigation_cancels_holds),
             ("held touch attacks repeat while scrolling and cancelled touches remain safe", touch_hold_and_scroll_cancel),
             ("welcome blocks progression until character selection and Start", intro_gate_and_start),
             ("welcome settles prior away rewards once and excludes menu time", welcome_away_once),
             ("returning to welcome pauses combat and excludes menu rewards", returning_to_welcome_pauses),
+            ("backward clock change in welcome rebases timers once without paying paused progress", welcome_clock_rollback_preserves_pause),
             ("both teacher sprites and selected character survive save, prestige, and backup", selected_character_persists),
             ("failed Start save remains in welcome and retry succeeds", start_storage_failure),
             ("gentle audio uses soft envelopes, throttles attacks, and cleans nodes", gentle_audio),

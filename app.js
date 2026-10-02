@@ -627,6 +627,7 @@ const RepeatInput = {
 
     init() {
         document.addEventListener('pointerdown', event => {
+            if (this.active && this.active.source === 'keyboard') this.stop();
             if (event.button !== 0 || event.isPrimary === false) return;
             const action = this.resolve(event.target);
             if (!action || !this.valid(action)) return;
@@ -670,6 +671,8 @@ const RepeatInput = {
             this.perform(action);
         }, true);
         document.addEventListener('keydown', event => {
+            if (this.active && this.active.source === 'keyboard' &&
+                ['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) this.stop();
             if (!['Enter', ' '].includes(event.key)) return;
             const action = this.resolve(event.target);
             if (!action) return;
@@ -688,7 +691,17 @@ const RepeatInput = {
             if (this.active && this.active.source === 'keyboard' && event.target === this.active.element) this.stop();
         });
         window.addEventListener('blur', () => this.stop());
-        window.addEventListener('scroll', () => this.stop(), { passive: true });
+        window.addEventListener('wheel', () => this.stop(), { passive: true });
+        window.addEventListener('scroll', () => {
+            const session = this.active;
+            // Focus scrolling can finish after keydown. Keep its visible target
+            // repeating; wheel, scroll keys and pointer input stop navigation.
+            if (session && session.source === 'keyboard' && document.activeElement === session.element) {
+                const rect = session.element.getBoundingClientRect();
+                if (rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth) return;
+            }
+            this.stop();
+        }, { passive: true });
     }
 };
 
@@ -722,6 +735,7 @@ const GameApp = {
     prepareIntroProgress() {
         if (!Data.canWrite || this.recoveryPending || this.playing) return;
         const now = Date.now();
+        Logic.rebaseClock(now);
         if (Data.state.hasStarted) {
             const from = Math.min(now, Data.state.lastActiveAt);
             Logic.reconcile(from);
@@ -736,6 +750,7 @@ const GameApp = {
     enterGame() {
         if (this.playing || !this.booted || !Data.canWrite || this.recoveryPending || document.hidden) return false;
         const now = Date.now();
+        Logic.rebaseClock(now);
         const candidate = Logic.cloneState();
         candidate.character = $('character-male').checked ? 'male' : 'female';
         candidate.hasStarted = true;
@@ -826,6 +841,7 @@ const GameApp = {
     resume(offline = true) {
         if (!this.playing || !this.booted || !Data.canWrite || this.recoveryPending) return;
         const now = Date.now();
+        Logic.rebaseClock(now);
         const from = Math.min(now, Data.state.lastActiveAt);
         Logic.reconcile(from);
         Logic.advance(from, now, { offline, render: false });
@@ -838,13 +854,14 @@ const GameApp = {
 
     flush(force = false) {
         if (!this.booted || !Data.canWrite || this.recoveryPending) return;
+        const now = Date.now();
+        Logic.rebaseClock(now);
         if (!this.playing) {
-            Data.state.lastActiveAt = Date.now();
+            Data.state.lastActiveAt = now;
             Data.save();
             return;
         }
         if (!document.hidden || force) {
-            const now = Date.now();
             Logic.advance(Math.min(now, Data.state.lastActiveAt), now, { render: false });
         }
         Data.save();
@@ -855,6 +872,7 @@ const GameApp = {
         this.lastVisual = now;
         if (this.playing && !document.hidden && Data.canWrite && !this.recoveryPending) {
             const clock = Date.now();
+            Logic.rebaseClock(clock);
             Logic.advance(Math.min(clock, Data.state.lastActiveAt), clock, { render: false });
             VFX.update(elapsed);
             if (now - this.lastRender >= 100) {

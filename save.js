@@ -5,6 +5,7 @@ const GameLimits = Object.freeze({
     MAX_NUMBER: 1e100,
     MAX_LEVEL: 1000,
     MAX_COUNTER: 1e9,
+    MAX_REVISION: Number.MAX_SAFE_INTEGER,
     MAX_ITEM_LEVEL: 25,
     ITEM_IDS: Object.freeze([
         'chalk-spark', 'star-pointer', 'storybook', 'rainbow-stamp', 'pencil-wand', 'lesson-bell',
@@ -141,9 +142,10 @@ const Data = {
         for (const field of ['gold', 'gem', 'token']) {
             if (own(raw, field)) state[field] = number(raw[field], field);
         }
-        for (const field of ['min', 'kills', 'totalClicks', 'bossKills', 'revision']) {
+        for (const field of ['min', 'kills', 'totalClicks', 'bossKills']) {
             if (own(raw, field)) state[field] = number(raw[field], field, GameLimits.MAX_COUNTER, true);
         }
+        if (own(raw, 'revision')) state.revision = number(raw.revision, 'revision', GameLimits.MAX_REVISION, true);
         const groups = { stat: ['c', 'a', 'crit'], comp: ['na', 'yu'] };
         for (const [field, names] of Object.entries(groups)) {
             if (!own(raw, field)) continue;
@@ -213,8 +215,6 @@ const Data = {
         if (!own(raw, 'lastActiveAt') && own(raw, 'lastDt')) {
             state.lastActiveAt = number(raw.lastDt, 'lastDt', maxTimestamp, true);
         }
-        // A clock change or a future timestamp must not postpone all future progress.
-        state.lastActiveAt = Math.min(Date.now(), state.lastActiveAt);
         if (own(raw, 'sound')) state.sound = boolean(raw.sound, 'sound');
         // Older saves already represent a played game and retain away rewards.
         state.hasStarted = own(raw, 'hasStarted') ? boolean(raw.hasStarted, 'hasStarted') : true;
@@ -259,6 +259,21 @@ const Data = {
             if (own(mob, 'deadline')) state.mob.deadline = number(mob.deadline, 'mob.deadline', maxTimestamp, true);
             else if (state.mob.boss) state.mob.deadline = state.lastActiveAt + (state.relic[3] ? 40000 : 30000);
         }
+        // A clock rollback moves every absolute timer together. The latest known
+        // clock anchors the offset; a played memory-only backup may have no savedAt.
+        const now = Date.now();
+        const legacyClock = !own(raw, 'version') || raw.version < 3;
+        const clockAnchor = Math.max(state.savedAt, legacyClock || state.hasStarted ? state.lastActiveAt : 0);
+        const rollback = Math.max(0, clockAnchor - now);
+        if (rollback > 0) {
+            const shift = value => value > 0 ? Math.max(0, value - rollback) : 0;
+            state.lastActiveAt = shift(state.lastActiveAt);
+            state.savedAt = shift(state.savedAt);
+            for (const field of ['rush', 'night']) state.skill[field] = shift(state.skill[field]);
+            for (const field of ['rushUntil', 'nightUntil']) state.buff[field] = shift(state.buff[field]);
+            state.mob.deadline = shift(state.mob.deadline);
+        }
+        state.lastActiveAt = Math.min(now, state.lastActiveAt);
         // Legacy saves did not count defeated bosses. The first boss is alive at 100 kills.
         if (!own(raw, 'bossKills')) state.bossKills = Math.floor(Math.max(0, state.kills - 1) / 100);
         state.achReady = state.achReady.map((value, index) => value || state.ach[index]);
@@ -294,10 +309,16 @@ const Data = {
 
     load() {
         const result = this._read(this.key);
-        if (!result.ok || result.raw === null) {
+        if (!result.ok) {
+            // Permission can disappear between the initial read and ownership
+            // acquisition. Keep any progress we have already read successfully.
+            if (!this.state) { this.state = this.createDefault(); this._revision = 0; }
+            return this.state;
+        }
+        if (result.raw === null) {
             this.state = this.createDefault();
             this._revision = 0;
-            if (result.ok) this.recoveryRaw = null;
+            this.recoveryRaw = null;
             return this.state;
         }
         try {
@@ -314,14 +335,25 @@ const Data = {
         return this.state;
     },
 
-    _storedRevision() {
+    _storedRevision(allowCorrupt = false) {
         const result = this._read(this.key);
         if (!result.ok) return null;
         if (result.raw === null) return 0;
         try {
             const parsed = JSON.parse(result.raw);
-            return typeof parsed.revision === 'number' && Number.isFinite(parsed.revision) ? parsed.revision : 0;
-        } catch (error) { return 0; }
+            return this.normalize(parsed).revision;
+        } catch (error) {
+            this._preserve(result.raw);
+            if (allowCorrupt) return 0;
+            this._announce('corrupt-save', '저장 원본에 문제가 발견되어 자동 덮어쓰기를 중지했습니다. 원본을 백업하고 복구하세요.');
+            return null;
+        }
+    },
+
+    _validLease(lease, now = Date.now()) {
+        return Boolean(lease && typeof lease.owner === 'string' && lease.owner.length > 0 &&
+            Number.isSafeInteger(lease.expiresAt) && lease.expiresAt > now &&
+            lease.expiresAt <= now + this._leaseDuration);
     },
 
     _ownsLease() {
@@ -330,7 +362,7 @@ const Data = {
         if (!result.ok) return false;
         try {
             const lease = JSON.parse(result.raw);
-            return lease && lease.owner === this._tabId && lease.expiresAt > Date.now();
+            return this._validLease(lease) && lease.owner === this._tabId;
         } catch (error) { return false; }
     },
 
@@ -346,7 +378,17 @@ const Data = {
         let next;
         try { next = this.normalize(candidate === undefined ? this.state : candidate, { strict: true }); }
         catch (error) { this._announce('validation', error.message); return false; }
-        const storedRevision = this._storedRevision();
+        if (this._mode === 'memory') {
+            // Without a lock or a lease no tab may touch the shared save, even
+            // when the main key is writable but the lease key is not.
+            if (!options.allowMemory) return false;
+            if (candidate !== undefined) this.state = next;
+            this.storageAvailable = false;
+            this._announce('storage-write', '이 탭에서 임시로 진행 중입니다. 진행을 보관하려면 백업을 내려받으세요.');
+            return true;
+        }
+        const storedRevision = this._storedRevision(Boolean(options.replaceRecovery));
+        if (this.recoveryRaw !== null && !options.replaceRecovery) return false;
         if (storedRevision === null) {
             // Never overwrite an unknown existing save when its revision cannot be read.
             if (options.allowMemory && candidate !== undefined) this.state = next;
@@ -358,7 +400,12 @@ const Data = {
             return false;
         }
         next.savedAt = Date.now();
-        next.revision = Math.min(GameLimits.MAX_COUNTER, Math.max(this._revision, storedRevision || 0) + 1);
+        const previousRevision = Math.max(this._revision, storedRevision || 0);
+        if (previousRevision >= GameLimits.MAX_REVISION) {
+            this._announce('validation', '저장 번호가 한계에 도달했습니다. 현재 진행의 백업을 보관해 주세요.');
+            return false;
+        }
+        next.revision = previousRevision + 1;
         if (!this._ownsLease()) {
             this._loseOwnership('저장 중 소유권이 이동하여 이전 탭의 쓰기를 차단했습니다.');
             this._sync();
@@ -456,6 +503,7 @@ const Data = {
     },
 
     _acquired() {
+        if (this._closed) return false;
         this.load();
         this.canWrite = true;
         this._announce('ownership-acquired', this.storageAvailable
@@ -463,6 +511,7 @@ const Data = {
             : '저장소를 사용할 수 없어 이 탭에서 임시로 진행합니다. 백업 파일을 내려받으세요.');
         this._broadcast({ type: 'acquired' });
         if (this._resolveReady) { this._resolveReady(true); this._resolveReady = null; }
+        return true;
     },
 
     _loseOwnership(message, code = 'ownership-lost') {
@@ -476,13 +525,14 @@ const Data = {
         this._trying = true;
         try {
             await navigator.locks.request(`${this.key}:writer`, { mode: 'exclusive', ifAvailable: true }, async lock => {
+                if (this._closed) return;
                 if (!lock) {
                     this._announce('ownership-lost', '다른 탭에서 게임이 실행 중입니다. 이 탭은 최신 저장을 표시합니다.');
                     this._sync();
                     if (this._resolveReady) { this._resolveReady(false); this._resolveReady = null; }
                     return;
                 }
-                this._acquired();
+                if (!this._acquired()) return;
                 await new Promise(resolve => { this._releaseLock = resolve; });
                 this._releaseLock = null;
             });
@@ -505,7 +555,7 @@ const Data = {
             }
             let lease = null;
             try { lease = JSON.parse(result.raw); } catch (error) { /* Invalid leases expire. */ }
-            if (lease && lease.owner !== this._tabId && lease.expiresAt > Date.now()) {
+            if (this._validLease(lease) && lease.owner !== this._tabId) {
                 this._announce('ownership-lost', '다른 탭에서 게임이 실행 중입니다. 이 탭은 최신 저장을 표시합니다.');
                 this._sync();
                 return;
@@ -520,6 +570,7 @@ const Data = {
             }
             // The confirmation window resolves simultaneous startup contenders before gameplay.
             await new Promise(resolve => setTimeout(resolve, 150));
+            if (this._closed) return;
             if (this._ownsLease()) this._acquired();
             else this._loseOwnership('다른 탭이 저장을 담당하고 있습니다.');
         } finally {
@@ -569,6 +620,7 @@ const Data = {
     close() {
         if (this.canWrite) this.save();
         this._closed = true;
+        if (this._resolveReady) { this._resolveReady(false); this._resolveReady = null; }
         if (this._timer) clearInterval(this._timer);
         this._timer = null;
         this._releaseOwnership();
@@ -583,7 +635,7 @@ const Data = {
     },
 
     _handleOwnershipRequest(owner) {
-        if (!this.canWrite || owner === this._tabId) return;
+        if (!this.canWrite || typeof owner !== 'string' || !owner || owner === this._tabId) return;
         if (!this.save()) {
             this._announce(this.recoveryRaw !== null ? 'corrupt-save' : 'storage-write',
                 '진행을 안전하게 저장할 수 없어 탭 전환을 중지했습니다. 현재 탭에서 백업하거나 저장 문제를 해결하세요.');
@@ -629,7 +681,8 @@ const Data = {
             if (event.key === `${this.key}:request` && this.canWrite) {
                 try {
                     const request = JSON.parse(event.newValue);
-                    if (request && Date.now() - request.requestedAt < 3000) this._handleOwnershipRequest(request.owner);
+                    const age = request && Number.isSafeInteger(request.requestedAt) ? Date.now() - request.requestedAt : -1;
+                    if (age >= 0 && age < 3000) this._handleOwnershipRequest(request.owner);
                 } catch (error) { /* Invalid requests cannot alter ownership. */ }
             }
         });
