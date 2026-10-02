@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from contextlib import contextmanager
+from pathlib import Path
 from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
@@ -18,6 +19,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url", nargs="?", default=os.environ.get("BASE_URL", "http://127.0.0.1:8000/"))
     parser.add_argument("--output", help="Optional JSON result file")
+    parser.add_argument("--screenshots", help="Optional directory for initial and progressed layout screenshots")
     args = parser.parse_args()
     results = []
 
@@ -388,17 +390,62 @@ def main():
                     "reloadBonus": 0, "resetRestoresIdleStart": True}
 
         def layouts():
-            sizes = [(320, 568), (390, 844), (844, 320), (844, 360), (1440, 900)]
+            sizes = [(320, 568), (375, 667), (390, 844), (412, 915), (768, 1024),
+                (844, 320), (844, 360), (1024, 768), (1280, 720), (1440, 900)]
             checked = []
             for width, height in sizes:
                 with fresh({"width": width, "height": height}) as (_, page, _):
+                    page.evaluate("() => document.fonts.ready")
+                    def visible_box(selector):
+                        element = page.locator(selector)
+                        assert element.is_visible(), f"{selector} is hidden at {width}x{height}"
+                        box = element.bounding_box()
+                        assert box and box["width"] > 0 and box["height"] > 0
+                        assert box["x"] >= -1 and box["x"] + box["width"] <= width + 1, f"{selector} is horizontally clipped at {width}x{height}: {box}"
+                        assert box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"{selector} is vertically clipped at {width}x{height}: {box}"
+                        return box
+
                     header = page.locator("#header").bounding_box()
-                    xp = page.locator("#player-progress").bounding_box()
+                    xp = visible_box("#player-progress")
                     assert header and xp and xp["height"] > 0
                     assert xp["y"] >= header["y"] and xp["y"] + xp["height"] <= header["y"] + header["height"], f"XP display escapes its header at {width}x{height}"
-                    for skill in ["#btn-s1", "#btn-s2"]:
-                        box = page.locator(skill).bounding_box()
-                        assert box and box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"skill control is clipped at {width}x{height}: {box}"
+                    glance = {selector: visible_box(selector) for selector in ["#hud-gold", "#hud-gem", "#hud-token",
+                        "#hud-auto", "#hud-click", "#mob-name", "#mob-hp-track", "#hp-text", "#work-stage",
+                        "#btn-s1", "#btn-s2", "#tab-nav", "#up-click", "#up-auto", "#up-crit"]}
+                    for card in page.locator("#tab-stat .up-card").all():
+                        box = card.bounding_box()
+                        assert box and box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"initial upgrade card requires scrolling at {width}x{height}: {box}"
+                    for tab_button in page.locator(".tab-btn").all():
+                        box = tab_button.bounding_box()
+                        assert box and box["width"] >= 44 and box["height"] >= 40, f"tab touch target is too small at {width}x{height}: {box}"
+                    battle = page.locator("#battle-view").bounding_box()
+                    panel = page.locator("#panel-area").bounding_box()
+                    workspace = page.locator("#game-app").bounding_box()
+                    assert battle and panel and workspace
+                    if width >= 1000:
+                        assert workspace["width"] > 800, f"desktop wastes its available width at {width}x{height}: {workspace}"
+                        assert battle["x"] + battle["width"] <= panel["x"] + 1, f"desktop battle and upgrades are not separate columns at {width}x{height}: {battle}, {panel}"
+                    else:
+                        overlap_x = min(battle["x"] + battle["width"], panel["x"] + panel["width"]) - max(battle["x"], panel["x"])
+                        overlap_y = min(battle["y"] + battle["height"], panel["y"] + panel["height"]) - max(battle["y"], panel["y"])
+                        assert overlap_x <= 1 or overlap_y <= 1, f"battle and upgrades overlap at {width}x{height}"
+                    page.evaluate("""() => {
+                        window.layoutClock = Date.now(); Date.now = () => layoutClock;
+                        Data.state.kills = 500; Data.state.min = 50;
+                        Data.state.player = {level:36,xp:220};
+                        Data.state.gold = 1806; Data.state.lastActiveAt = layoutClock;
+                        Simulation.spawn(Data.state, true, layoutClock);
+                        Logic.sync(layoutClock); UI.renderAll();
+                    }""")
+                    boss_view = {selector: visible_box(selector) for selector in ["#mob-name", "#mob-hp-track",
+                        "#hp-text", "#boss-timer-wrap", "#boss-seconds", "#btn-s1", "#btn-s2", "#tab-nav",
+                        "#up-click", "#up-auto", "#up-crit"]}
+                    for card in page.locator("#tab-stat .up-card").all():
+                        box = card.bounding_box()
+                        assert box and box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"boss display pushes an upgrade card out of view at {width}x{height}: {box}"
+                    boss_battle = page.locator("#battle-view").bounding_box()
+                    boss_timer = boss_view["#boss-timer-wrap"]
+                    assert boss_battle and boss_timer["y"] >= boss_battle["y"] and boss_timer["y"] + boss_timer["height"] <= boss_battle["y"] + boss_battle["height"], f"boss deadline is outside its battle card at {width}x{height}"
                     for tab, button in [("tab-stat", "up-click"), ("tab-comp", "up-comp2"), ("tab-sys", None)]:
                         selector = f'[data-target="{tab}"]'
                         page.locator(selector).click()
@@ -409,8 +456,113 @@ def main():
                         assert box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"{tab} control is clipped at {width}x{height}: {box}"
                     dimensions = page.evaluate("({scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth})")
                     assert dimensions["scroll"] <= dimensions["client"] + 1, "unintended horizontal overflow"
-                    checked.append(f"{width}x{height}")
-            return {"reachableControls": checked}
+                    checked.append({"viewport": f"{width}x{height}", "initialControls": glance,
+                        "bossControls": boss_view, "battle": battle, "panel": panel, "workspace": workspace})
+            return {"visibleWithoutScrolling": checked, "tabTouchTargets": "at least 44 × 40 CSS pixels"}
+
+        def dialogs_on_compact_screens():
+            checked = []
+            for width, height in [(320, 568), (844, 320)]:
+                with fresh({"width": width, "height": height}) as (_, page, _):
+                    for show, dialog_id, action_id, close_id in [
+                        ("Sys.export()", "backup-dialog", "backup-download", "backup-close"),
+                        ("Sys.import()", "import-dialog", "import-submit", "import-cancel"),
+                    ]:
+                        page.evaluate(show)
+                        dialog = page.locator(f"#{dialog_id}")
+                        dialog.wait_for(state="visible")
+                        box = dialog.bounding_box()
+                        assert box and box["x"] >= -1 and box["x"] + box["width"] <= width + 1
+                        assert box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"{dialog_id} escapes compact viewport"
+                        action = page.locator(f"#{action_id}")
+                        action.scroll_into_view_if_needed()
+                        action_box = action.bounding_box()
+                        assert action_box and action_box["height"] >= 40
+                        assert action_box["y"] >= -1 and action_box["y"] + action_box["height"] <= height + 1, f"{dialog_id} action cannot be reached"
+                        dimensions = dialog.evaluate("element => ({scroll:element.scrollWidth, client:element.clientWidth})")
+                        assert dimensions["scroll"] <= dimensions["client"] + 1, f"{dialog_id} overflows horizontally"
+                        page.locator(f"#{close_id}").click()
+                        assert dialog.is_hidden()
+                        checked.append(f"{dialog_id} {width}x{height}")
+            return {"reachableDialogs": checked}
+
+        def glance_summaries_follow_progress():
+            with fresh() as (_, page, _):
+                page.evaluate("window.summaryClock = Date.now(); Date.now = () => summaryClock")
+                assert page.locator("#hud-auto").inner_text() == "10"
+                assert page.locator("#hud-click").inner_text() == "10"
+                assert page.locator("#work-stage").inner_text() == "1"
+                assert "자동" in page.locator("#work-status").inner_text()
+                page.evaluate("""() => {
+                    Data.state.player = {level:36,xp:220};
+                    Data.state.min = 2; Data.state.gold = 1806;
+                    Data.state.gem = 5; Data.state.kills = 26;
+                    Data.state.mob.hp = Simulation.calcMobStats(Data.state).hp * 0.18;
+                    Data.state.skill.rush = summaryClock - 14000;
+                    Data.state.skill.night = summaryClock - 8000;
+                    Data.state.buff.nightUntil = summaryClock + 9000;
+                    Data.state.lastActiveAt = summaryClock;
+                    Logic.sync(summaryClock);
+                    UI.renderAll();
+                }""")
+                assert page.locator("#hud-auto").inner_text() == "27", "automatic damage summary did not reflect the player level"
+                assert page.locator("#hud-click").inner_text() == "27", "manual damage summary did not reflect the player level"
+                assert page.locator("#work-stage").inner_text() == "27"
+                assert "74" in page.locator("#next-boss").inner_text()
+                assert page.locator("#clock").inner_text() == "16:02"
+                assert "220 / 370" in page.locator("#player-xp").inner_text()
+                hp = page.locator("#hp-text").inner_text()
+                assert "/" in hp and page.locator("#mob-hp-track").get_attribute("aria-valuenow") == "18"
+                assert "46초" in page.locator("#skill-status-rush").inner_text()
+                assert "작동 중" in page.locator("#skill-status-night").inner_text()
+                assert page.locator("#btn-s1").get_attribute("data-state") == "cooldown"
+                assert page.locator("#btn-s2").get_attribute("data-state") == "active"
+                assert page.locator("#btn-s1").get_attribute("data-active") == "false"
+                assert page.locator("#btn-s2").get_attribute("data-active") == "true", "an active skill lacks its visual-state marker"
+                page.locator("#up-auto").click()
+                assert page.locator("#hud-auto").inner_text() != "27", "an upgrade did not refresh the automatic damage summary"
+                page.evaluate("Simulation.spawn(Data.state, true, summaryClock); Logic.sync(summaryClock); UI.renderAll()")
+                assert "보스" in page.locator("#work-status").inner_text()
+                assert "보스" in page.locator("#next-boss").inner_text()
+                assert page.locator("#boss-seconds").inner_text() == "30초"
+                assert page.locator("#boss-timer-wrap").is_visible()
+                return {"level": 36, "levelAdjustedDamage": 27, "stage": 27, "remainingToBoss": 74,
+                    "hpLabel": hp, "cooldownsReadable": True, "upgradeRefresh": True, "bossDeadlineVisible": True}
+
+        def screenshots():
+            if not args.screenshots:
+                return {"skipped": "pass --screenshots to save visual review images"}
+            directory = Path(args.screenshots)
+            directory.mkdir(parents=True, exist_ok=True)
+            images = []
+            for width, height in [(390, 844), (1440, 900), (320, 568), (844, 320)]:
+                with fresh({"width": width, "height": height}) as (_, page, _):
+                    # Stop time at the current frame so an image is a stable
+                    # layout artifact rather than a capture of random combat.
+                    page.evaluate("window.visualClock = Date.now(); Date.now = () => visualClock")
+                    page.evaluate("() => document.fonts.ready")
+                    page.wait_for_timeout(180)
+                    initial = directory / f"initial-{width}x{height}.png"
+                    page.screenshot(path=str(initial), animations="disabled")
+                    page.evaluate("""() => {
+                        Data.state.player = {level:36,xp:220};
+                        Data.state.min = 2; Data.state.gold = 1806;
+                        Data.state.gem = 5; Data.state.token = 0;
+                        Data.state.kills = 26; Data.state.mob.boss = false;
+                        Data.state.mob.deadline = 0;
+                        Data.state.mob.hp = Simulation.calcMobStats(Data.state).hp * 0.18;
+                        Data.state.skill.rush = visualClock - 14000;
+                        Data.state.skill.night = visualClock - 8000;
+                        Data.state.buff.nightUntil = visualClock + 9000;
+                        Data.state.lastActiveAt = visualClock;
+                        Logic.sync(visualClock);
+                        UI.renderAll();
+                    }""")
+                    page.wait_for_timeout(180)
+                    progressed = directory / f"progressed-{width}x{height}.png"
+                    page.screenshot(path=str(progressed), animations="disabled")
+                    images.extend([str(initial), str(progressed)])
+            return {"images": images, "progressedFixture": {"level": 36, "minute": 2, "gold": 1806, "activeNightBuff": True}}
 
         for name, function in [
             ("initialization and both skills", initialization),
@@ -429,6 +581,9 @@ def main():
             ("title, companions, relics, and achievements omit personal names", anonymous_game_labels),
             ("legacy save migrates and XP survives reload without bonuses, then resets", migrated_xp_reload_reset),
             ("portrait, short landscape, and desktop controls", layouts),
+            ("backup and import dialogs remain usable on compact screens", dialogs_on_compact_screens),
+            ("damage, HP, stage, and skill summaries follow game progress", glance_summaries_follow_progress),
+            ("initial and progressed screenshots for visual review", screenshots),
         ]:
             check(name, function)
         browser.close()

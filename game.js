@@ -211,7 +211,7 @@ const Ach = {
         { id: 1, title: '퇴근 예행 연습', desc: '16:10 보스 처치', condition: s => s.bossKills >= 1, rwd: 20 },
         { id: 2, title: '광란의 손가락', desc: '화면 500회 터치', condition: s => s.totalClicks >= 500, rwd: 15 },
         { id: 3, title: '부장님의 인정', desc: '골드 100만 달성', condition: s => s.gold >= 1000000, rwd: 30 },
-        { id: 4, title: '업무의 달인', desc: '타건력 Lv 50 달성', condition: s => s.stat.c.l >= 50, rwd: 50 }
+        { id: 4, title: '업무의 달인', desc: '추가 공격 Lv 50 달성', condition: s => s.stat.c.l >= 50, rwd: 50 }
     ],
     evaluate(state) {
         let changed = false;
@@ -311,8 +311,8 @@ const Logic = {
             if (VFX.hit) VFX.hit();
             const center = VFX.center ? VFX.center() : { x: VFX.cvs.width / 2, y: VFX.cvs.height / 2 };
             if (!Number.isFinite(x) || !Number.isFinite(y)) { x = center.x; y = center.y; }
-            VFX.add((events.critical ? '💥' : '-') + (typeof fNum === 'function' ? fNum(events.lastDamage) : events.lastDamage), x, y, auto ? 'auto' : events.critical ? 'crit' : 'normal');
-            if (events.kills > 0) VFX.add('+💰' + (typeof fNum === 'function' ? fNum(events.gold) : events.gold), center.x, center.y - 20, 'gold');
+            VFX.add((events.critical ? '치명타 ' : '-') + (typeof fNum === 'function' ? fNum(events.lastDamage) : events.lastDamage), x, y, auto ? 'auto' : events.critical ? 'crit' : 'normal');
+            if (events.kills > 0) VFX.add('골드 +' + (typeof fNum === 'function' ? fNum(events.gold) : events.gold), center.x, center.y - 20, 'gold');
         }
         if (events.kills > 0) this.sound('coin');
     },
@@ -462,7 +462,7 @@ const Combat = {
         candidate.buff[`${type}Until`] = now + skill.d * 1000;
         if (!Logic.commit(candidate)) return false;
         Logic.sound('gacha');
-        Logic.toast(type === 'rush' ? '🏃 랜덤 조퇴 사유 발동!' : '🌙 밤편지 노동요! (수동·조퇴 크리티컬 100%)');
+        Logic.toast(type === 'rush' ? '집중 처리 시작 · 5초간 빠른 자동 클릭' : '몰입 모드 시작 · 10초간 추가 공격 치명타 100%');
         Logic.sync(now);
         Logic.render();
         return true;

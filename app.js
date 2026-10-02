@@ -13,6 +13,7 @@ const fNum = value => {
 const Sys = {
     ctx: null,
     toastTimer: null,
+    levelNoticeTimer: null,
     shakeTimer: null,
     audioWarning: false,
     get sound() { return Data.state.sound !== false; },
@@ -78,7 +79,17 @@ const Sys = {
     },
 
     toast(message) {
-        $('toast').textContent = String(message).replace(/<br\s*\/?>/gi, '\n');
+        const text = String(message).replace(/<br\s*\/?>/gi, '\n');
+        const level = text.match(/^✨\s*Lv\s+(\d+)\s+달성!/);
+        const notice = $('level-notice');
+        if (notice && level && !text.includes('\n')) {
+            notice.textContent = '레벨 업 · Lv.' + level[1];
+            notice.classList.add('show');
+            clearTimeout(this.levelNoticeTimer);
+            this.levelNoticeTimer = setTimeout(() => notice.classList.remove('show'), 2200);
+            return;
+        }
+        $('toast').textContent = text;
         $('toast').classList.add('show');
         clearTimeout(this.toastTimer);
         this.toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2500);
@@ -250,9 +261,9 @@ const VFX = {
         if (this.ptc.length >= 120) this.ptc.shift();
         this.ptc.push({
             t: String(text), x: x + (Math.random() - 0.5) * 30, y,
-            c: critical ? '#e84118' : type === 'auto' ? '#00a8ff' : gold ? '#4cd137' : '#fbc531',
-            s: critical ? 40 : gold ? 25 : 20,
-            life: 1, vx: (Math.random() - 0.5) * 240,
+            c: critical ? '#dc8067' : type === 'auto' ? '#6f9c8b' : gold ? '#bba26b' : '#d4ded6',
+            s: critical ? 22 : 14,
+            life: 1, vx: (Math.random() - 0.5) * 120,
             vy: gold ? -120 : critical ? -360 : -240, g: 720
         });
     },
@@ -271,9 +282,9 @@ const VFX = {
             particle.life -= 0.9 * seconds;
             if (particle.life <= 0) { this.ptc.splice(index, 1); continue; }
             this.ctx.globalAlpha = Math.max(0, particle.life);
-            this.ctx.font = '900 ' + particle.s + 'px Pretendard, sans-serif';
-            this.ctx.fillStyle = '#000';
-            this.ctx.fillText(particle.t, particle.x + 2, particle.y + 2);
+            this.ctx.font = '700 ' + particle.s + 'px Pretendard, sans-serif';
+            this.ctx.fillStyle = 'rgba(13, 25, 21, 0.35)';
+            this.ctx.fillText(particle.t, particle.x + 1, particle.y + 1);
             this.ctx.fillStyle = particle.c;
             this.ctx.fillText(particle.t, particle.x, particle.y);
         }
@@ -287,7 +298,8 @@ const UI = {
 
     renderSound() {
         const button = $('btn-sound');
-        button.textContent = Sys.sound ? '🔊' : '🔇';
+        button.dataset.muted = String(!Sys.sound);
+        if ($('sound-label')) $('sound-label').textContent = Sys.sound ? '효과음 켜짐' : '효과음 꺼짐';
         button.setAttribute('aria-pressed', String(Sys.sound));
         button.setAttribute('aria-label', Sys.sound ? '소리 끄기' : '소리 켜기');
     },
@@ -306,17 +318,22 @@ const UI = {
         $('player-xp-track').setAttribute('aria-valuetext', maximumLevel ? '최고 레벨 달성' :
             '레벨 ' + state.player.level + ', 경험치 ' + state.player.xp + ' / ' + requiredXP + '. 초당 5 경험치 자동 획득.');
         const hour = 16 + Math.floor(state.min / 60);
-        $('clock').textContent = '🕒 ' + hour + ':' + String(state.min % 60).padStart(2, '0');
+        $('clock').textContent = hour + ':' + String(state.min % 60).padStart(2, '0');
         $('hud-gold').textContent = fNum(state.gold);
         $('hud-gem').textContent = fNum(state.gem);
         $('hud-token').textContent = fNum(state.token);
+        if ($('hud-auto')) $('hud-auto').textContent = fNum(Logic.getA_Dmg());
+        if ($('hud-click')) $('hud-click').textContent = fNum(Logic.getC_Dmg());
+        if ($('day-progress-text')) $('day-progress-text').textContent = state.min >= 40
+            ? '퇴근 목표 달성' : fNum(state.min) + ' / 40분';
+        if ($('day-progress-fill')) $('day-progress-fill').style.width = Math.min(100, state.min / 40 * 100) + '%';
         $('preview-token').textContent = fNum(state.min);
         $('btn-gacha').disabled = !Data.canWrite || state.gem < 10 || state.relic.every(Boolean);
         $('btn-gacha').setAttribute('aria-label', state.relic.every(Boolean) ? '교보재 수집 완료' : '보석 10개로 교보재 뽑기');
         const descriptors = [
-            ['click', state.stat.c, Logic.getC_Dmg(), '캔버스 타건력'],
-            ['auto', state.stat.a, Logic.getA_Dmg(), '자동 파쇄기'],
-            ['crit', state.stat.crit, state.stat.crit.p, '크리티컬 결재'],
+            ['click', state.stat.c, Logic.getC_Dmg(), '추가 공격'],
+            ['auto', state.stat.a, Logic.getA_Dmg(), '자동 처리'],
+            ['crit', state.stat.crit, state.stat.crit.p, '치명타'],
             ['comp1', state.comp.na, state.comp.na.p, '체력 코치'],
             ['comp2', state.comp.yu, state.comp.yu.p, '응원 동료']
         ];
@@ -347,6 +364,12 @@ const UI = {
         $('mob-hp').style.width = ratio * 100 + '%';
         $('mob-hp-track').setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
         $('mob-hp-track').setAttribute('aria-valuetext', '남은 체력 ' + fNum(state.mob.hp) + ', 최대 체력 ' + fNum(maxHP));
+        if ($('hp-text')) $('hp-text').textContent = fNum(state.mob.hp) + ' / ' + fNum(maxHP);
+        if ($('work-stage')) $('work-stage').textContent = fNum(state.kills + 1);
+        if ($('work-status')) $('work-status').textContent = !Data.canWrite || GameApp.recoveryPending || document.hidden
+            ? '일시 정지' : state.mob.boss ? '보스 결재' : '자동 처리 중';
+        if ($('next-boss')) $('next-boss').textContent = state.mob.boss ? '보스 결재 중'
+            : state.kills >= GameLimits.MAX_COUNTER ? '최고 업무 단계' : (100 - state.kills % 100) + '개 처리하면 보스';
         $('battle-view').classList.toggle('boss-mode', state.mob.boss);
         $('monster').classList.toggle('boss', state.mob.boss);
         $('battle-view').classList.toggle('night-mode', now < state.buff.nightUntil);
@@ -359,12 +382,14 @@ const UI = {
         const timer = $('boss-timer-wrap');
         timer.hidden = !state.mob.boss;
         timer.style.display = state.mob.boss ? 'block' : 'none';
+        if ($('boss-seconds')) $('boss-seconds').textContent = '';
         if (state.mob.boss) {
             const maximum = state.relic[3] ? 40 : 30;
             const seconds = Math.max(0, (state.mob.deadline - now) / 1000);
             const percentage = Math.max(0, Math.min(100, seconds / maximum * 100));
             $('boss-timer-fill').style.width = percentage + '%';
-            $('boss-timer-fill').style.backgroundColor = percentage < 30 ? '#e84118' : '#fbc531';
+            timer.dataset.urgent = String(percentage < 30);
+            if ($('boss-seconds')) $('boss-seconds').textContent = Math.ceil(seconds) + '초';
             timer.setAttribute('aria-valuenow', String(Math.ceil(seconds)));
             timer.setAttribute('aria-valuemax', String(maximum));
             timer.setAttribute('aria-valuetext', '보스 제한 시간 ' + Math.ceil(seconds) + '초 남음');
@@ -398,7 +423,7 @@ const UI = {
             button.className = 'btn-claim';
             button.dataset.achievement = String(achievement.id);
             button.disabled = done || !ready || !Data.canWrite;
-            button.textContent = done ? '완료' : '💎 ' + achievement.rwd;
+            button.textContent = done ? '완료' : '보석 +' + achievement.rwd;
             button.setAttribute('aria-label', achievement.title +
                 (done ? ' 수령 완료' : ' 보상 보석 ' + achievement.rwd + '개 수령'));
             button.addEventListener('click', () => Ach.claim(achievement.id));
@@ -411,15 +436,20 @@ const UI = {
         if (Math.floor(now / 1000) === this.lastSkillSecond) return;
         this.lastSkillSecond = Math.floor(now / 1000);
         for (const [name, number, title] of [
-            ['rush', 1, '랜덤 조퇴 사유'], ['night', 2, '밤편지 노동요']
+            ['rush', 1, '집중 처리'], ['night', 2, '몰입 모드']
         ]) {
             const duration = Combat.sk[name].cd * 1000;
             const remaining = Math.max(0, Data.state.skill[name] + duration - now);
+            const active = Math.max(0, Data.state.buff[name + 'Until'] - now);
+            const status = !Data.canWrite ? '일시 정지' : active > 0 ? '작동 중 · ' + Math.ceil(active / 1000) + '초'
+                : remaining > 0 ? Math.ceil(remaining / 1000) + '초 대기' : '사용 가능';
             const button = $('btn-s' + number);
-            button.disabled = !Data.canWrite || remaining > 0;
-            $('cd-' + name).style.height = Math.min(100, remaining / duration * 100) + '%';
-            button.setAttribute('aria-label', title +
-                (remaining > 0 ? '. ' + Math.ceil(remaining / 1000) + '초 뒤 사용 가능' : '. 사용 가능'));
+            button.disabled = !Data.canWrite || remaining > 0 || active > 0;
+            button.dataset.active = String(active > 0);
+            button.dataset.state = !Data.canWrite ? 'paused' : active > 0 ? 'active' : remaining > 0 ? 'cooldown' : 'ready';
+            $('cd-' + name).style.width = Math.min(100, remaining / duration * 100) + '%';
+            if ($('skill-status-' + name)) $('skill-status-' + name).textContent = status;
+            button.setAttribute('aria-label', title + '. ' + status);
         }
     },
 
