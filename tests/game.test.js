@@ -54,7 +54,7 @@ function harness({ raw, storageFailure, sharedStorage } = {}) {
         VFX: { add() {}, cvs: { width: 480, height: 200 } },
         $: () => ({ style: {}, classList: { add() {}, remove() {} } })
     });
-    for (const file of ["save.js", "game.js"]) {
+    for (const file of ["save.js", "catalog.js", "game.js"]) {
         vm.runInContext(fs.readFileSync(path.join(ROOT, file), "utf8"), context, { filename: file });
     }
     vm.runInContext("globalThis.api = { Data, GameLimits, Ach, Logic, Combat, Simulation };", context);

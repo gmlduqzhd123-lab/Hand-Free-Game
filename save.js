@@ -5,6 +5,14 @@ const GameLimits = Object.freeze({
     MAX_NUMBER: 1e100,
     MAX_LEVEL: 1000,
     MAX_COUNTER: 1e9,
+    MAX_ITEM_LEVEL: 25,
+    ITEM_IDS: Object.freeze([
+        'chalk-spark', 'star-pointer', 'storybook', 'rainbow-stamp', 'pencil-wand', 'lesson-bell',
+        'fairy-clock', 'tidy-broom', 'cloud-robot', 'paper-bird', 'music-box', 'classroom-garden',
+        'reading-lamp', 'wisdom-book', 'note-bag', 'learning-badge',
+        'coin-pouch', 'honey-lunchbox', 'treasure-map', 'lucky-plant',
+        'star-glasses', 'praise-ribbon', 'sand-timer', 'calm-tea'
+    ]),
     XP_PER_SECOND: 5,
     xpForLevel(level) { return 20 + (Math.max(1, Math.min(this.MAX_LEVEL, Math.floor(level))) - 1) * 10; },
     finite(value, fallback = 0, maximum = 1e100) {
@@ -61,11 +69,16 @@ const Data = {
             relic: [false, false, false, false],
             ach: [false, false, false, false, false],
             achReady: [false, false, false, false, false],
+            items: Object.fromEntries(GameLimits.ITEM_IDS.map(id => [id, 0])),
+            extraRelics: Array(16).fill(false),
+            extraAch: Array(25).fill(false),
+            extraAchReady: Array(25).fill(false),
             skill: { rush: 0, night: 0 },
             buff: { rushUntil: 0, nightUntil: 0 },
             autoRemainder: 0,
             player: { level: 1, xp: 0 },
             xpRemainder: 0,
+            xpBonusRemainder: 0,
             lastActiveAt: Date.now(), savedAt: 0, revision: 0, sound: true,
             character: 'female', hasStarted: false
         };
@@ -103,8 +116,8 @@ const Data = {
         const state = this.createDefault();
         if (raw.version === 3 || raw.version === 4) {
             for (const field of Object.keys(state)) {
-                // Optional presentation fields keep existing v3/v4 saves valid.
-                if (['character', 'hasStarted'].includes(field)) continue;
+                // Optional presentation and collection fields keep existing v3/v4 saves valid.
+                if (['character', 'hasStarted', 'items', 'extraRelics', 'extraAch', 'extraAchReady', 'xpBonusRemainder'].includes(field)) continue;
                 if (raw.version === 3 && ['player', 'xpRemainder'].includes(field)) continue;
                 if (!own(raw, field)) throw new SaveValidationError(`${field}의 저장 정보가 누락되었습니다.`);
             }
@@ -169,12 +182,29 @@ const Data = {
             const maximumXp = state.player.level === GameLimits.MAX_LEVEL ? 0 : GameLimits.xpForLevel(state.player.level) - 1;
             state.player.xp = number(player.xp, 'player.xp', maximumXp, true);
         }
-        for (const [field, length] of [['relic', 4], ['ach', 5], ['achReady', 5]]) {
+        if (own(raw, 'items')) {
+            const items = object(raw.items, 'items');
+            for (const id of Object.keys(items)) {
+                if (!GameLimits.ITEM_IDS.includes(id)) {
+                    throw new SaveValidationError(`알 수 없는 아이템 ID입니다: ${id}`);
+                }
+                const level = number(items[id], `items.${id}`, GameLimits.MAX_ITEM_LEVEL, true);
+                // Collection levels never silently clamp, including when loading a saved file.
+                if (items[id] > GameLimits.MAX_ITEM_LEVEL) {
+                    throw new SaveValidationError(`items.${id}의 레벨은 25 이하여야 합니다.`);
+                }
+                state.items[id] = level;
+            }
+        }
+        for (const [field, length] of [
+            ['relic', 4], ['ach', 5], ['achReady', 5],
+            ['extraRelics', 16], ['extraAch', 25], ['extraAchReady', 25]
+        ]) {
             if (!own(raw, field)) continue;
             if (!Array.isArray(raw[field]) || raw[field].length !== length) {
                 throw new SaveValidationError(`${field}의 배열 길이가 올바르지 않습니다.`);
             }
-            state[field] = raw[field].map((value, index) => boolean(value, `${field}[${index}]`));
+            state[field] = Array.from(raw[field], (value, index) => boolean(value, `${field}[${index}]`));
         }
         const maxTimestamp = 8640000000000000;
         for (const field of ['lastActiveAt', 'savedAt']) {
@@ -202,6 +232,10 @@ const Data = {
             state.xpRemainder = number(raw.xpRemainder, 'xpRemainder', 1);
             if (state.xpRemainder >= 1) throw new SaveValidationError('경험치 획득 시간은 1초 미만이어야 합니다.');
         }
+        if (own(raw, 'xpBonusRemainder')) {
+            state.xpBonusRemainder = number(raw.xpBonusRemainder, 'xpBonusRemainder', 1);
+            if (state.xpBonusRemainder >= 1) throw new SaveValidationError('보너스 경험치 잔여량은 1 미만이어야 합니다.');
+        }
         if (own(raw, 'skill')) {
             const skills = object(raw.skill, 'skill');
             for (const [name, legacy] of [['rush', 'r'], ['night', 'n']]) {
@@ -228,6 +262,7 @@ const Data = {
         // Legacy saves did not count defeated bosses. The first boss is alive at 100 kills.
         if (!own(raw, 'bossKills')) state.bossKills = Math.floor(Math.max(0, state.kills - 1) / 100);
         state.achReady = state.achReady.map((value, index) => value || state.ach[index]);
+        state.extraAchReady = state.extraAchReady.map((value, index) => value || state.extraAch[index]);
         if (state.kills >= 10) state.achReady[0] = true;
         if (state.bossKills > 0) state.achReady[1] = true;
         if (state.totalClicks >= 500) state.achReady[2] = true;

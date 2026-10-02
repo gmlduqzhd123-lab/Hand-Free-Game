@@ -351,7 +351,7 @@ def main():
         def initialization():
             with fresh() as (_, page, _):
                 page.wait_for_timeout(250)
-                assert page.locator(".achieve-item").count() == 5
+                assert page.locator(".achieve-item").count() == 30
                 assert page.locator("#lv-comp1").inner_text() == "0"
                 assert page.locator("#lv-comp2").inner_text() == "0"
                 assert page.evaluate("Number.isFinite(Data.state.mob.hp) && Data.state.mob.hp > 0")
@@ -359,7 +359,7 @@ def main():
                 page.locator("#btn-s1").click()
                 page.locator("#btn-s2").click()
                 page.wait_for_timeout(200)
-                return {"achievements": 5, "skills": "rush/night activated"}
+                return {"achievements": 30, "items":24, "relics":20, "skills": "rush/night activated"}
 
         def keyboard_and_achievement():
             with fresh() as (_, page, _):
@@ -617,7 +617,7 @@ def main():
 
         def anonymous_game_labels():
             with fresh() as (_, page, _):
-                for tab in ["tab-stat", "tab-comp", "tab-relic", "tab-ach", "tab-sys"]:
+                for tab in ["tab-stat", "tab-comp", "tab-shop", "tab-relic", "tab-ach", "tab-sys"]:
                     page.locator(f'[data-target="{tab}"]').click()
                 labels = page.evaluate(r"""() => [document.title, document.querySelector('meta[name="description"]').content, document.body.textContent,
                     ...[...document.querySelectorAll('[aria-label]')].map(element => element.getAttribute('aria-label'))].join('\n')""")
@@ -625,7 +625,7 @@ def main():
                     assert personal_name not in labels, f"personal name is still rendered: {personal_name}"
                 gameplay_labels=page.evaluate(r"""() => {
                     const body=document.body.cloneNode(true);
-                    body.querySelectorAll('.app-credit').forEach(credit=>credit.remove());
+                    body.querySelectorAll('.app-credit,.copyright-note').forEach(credit=>credit.remove());
                     return [document.title,document.querySelector('meta[name="description"]').content,body.textContent,
                         ...[...body.querySelectorAll('[aria-label]')].map(element=>element.getAttribute('aria-label'))].join('\n');
                 }""")
@@ -638,7 +638,7 @@ def main():
 
         def upgrades_relics_prestige_backup():
             with fresh() as (_, page, _):
-                page.evaluate("window.flowClock = Date.now(); Date.now = () => flowClock; Data.state.gold = 100000; Data.state.gem = 40; UI.renderAll()")
+                page.evaluate("window.flowClock = Date.now(); Date.now = () => flowClock; Data.state.gold = 100000; Data.state.gem = 200; UI.renderAll()")
                 starting_gold = page.evaluate("Data.state.gold")
                 for button, state, level in [("up-click", "stat.c", 2), ("up-auto", "stat.a", 2), ("up-crit", "stat.crit", 1)]:
                     before = page.evaluate(f"Data.state.{state}.c")
@@ -652,10 +652,10 @@ def main():
                     assert page.evaluate(f"Data.state.{state}.l") == 1
                     assert page.evaluate(f"Data.state.{state}.p") > 0
                 page.locator('[data-target="tab-relic"]').click()
-                for owned in range(1, 5):
+                for owned in range(1, 21):
                     page.locator("#btn-gacha").click()
-                    assert page.evaluate("Data.state.relic.filter(Boolean).length") == owned, "relic draw awarded a duplicate"
-                    assert page.evaluate("Data.state.gem") == 40 - 10 * owned
+                    assert page.evaluate("Catalog.relicCount(Data.state)") == owned, "relic draw awarded a duplicate"
+                    assert page.evaluate("Data.state.gem") == 200 - 10 * owned
                 assert page.locator("#btn-gacha").is_disabled(), "completed relic collection remains purchasable"
                 page.evaluate("Data.state.min = 2; Data.state.player = {level:7,xp:13}; Data.state.xpRemainder = 0.25; Data.state.ach[0] = true; Data.state.achReady[0] = true; Data.state.totalClicks = 501; Data.state.lastActiveAt = flowClock; UI.renderAll()")
                 page.locator('[data-target="tab-sys"]').click()
@@ -678,7 +678,8 @@ def main():
                 restored = page.evaluate("({player:{...Data.state.player}, xpRemainder:Data.state.xpRemainder, token:Data.state.token, relic:[...Data.state.relic], ach:[...Data.state.ach], totalClicks:Data.state.totalClicks})")
                 assert restored == preserved, "valid UI backup round trip lost earned progress"
                 assert page.evaluate("JSON.parse(localStorage.getItem(Data.key)).token") == 2
-                return {"upgrades": 5, "distinctRelics": 4, "prestigeTokens": 2, "backupRestoredEarnedProgress": True}
+                assert page.evaluate("Data.state.extraRelics.length===16 && Data.state.extraRelics.every(Boolean)")
+                return {"upgrades": 5, "distinctRelics": 20, "legacyRelicArrayLength":4, "prestigeTokens": 2, "backupRestoredEarnedProgress": True}
 
         def migrated_xp_reload_reset():
             with fresh() as (_, source, _):
@@ -862,7 +863,7 @@ def main():
                     boss_battle = page.locator("#battle-view").bounding_box()
                     boss_timer = page.locator("#boss-timer-wrap").bounding_box()
                     assert boss_battle and boss_timer["y"] >= boss_battle["y"] and boss_timer["y"] + boss_timer["height"] <= boss_battle["y"] + boss_battle["height"], f"boss deadline is outside its battle card at {width}x{height}"
-                    for tab, button in [("tab-stat", "up-click"), ("tab-comp", "up-comp2"), ("tab-relic", None), ("tab-ach", None), ("tab-sys", None)]:
+                    for tab, button in [("tab-stat", "up-click"), ("tab-comp", "up-comp2"), ("tab-shop", None), ("tab-relic", None), ("tab-ach", None), ("tab-sys", None)]:
                         selector = f'[data-target="{tab}"]'
                         page.locator(selector).click()
                         readable_text(page,"#game-app")
@@ -873,7 +874,7 @@ def main():
                         assert box["y"] >= -1 and box["y"] + box["height"] <= height + 1, f"{tab} control is clipped at {width}x{height}: {box}"
                     dimensions = page.evaluate("({scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth})")
                     assert dimensions["scroll"] <= dimensions["client"] + 1, "unintended horizontal overflow"
-                    checked.append({"viewport": f"{width}x{height}", "battleHeight":scene["height"], "allFiveTabsReadableAndReachable":True})
+                    checked.append({"viewport": f"{width}x{height}", "battleHeight":scene["height"], "allSixTabsReadableAndReachable":True})
             return {"welcomeViewports":intro_checked,"gameViewports":checked,"verticalScrollingAllowed":True,"textMinimumPixels":14,"tabsMinimumFontPixels":16,"tabTouchTargets":"at least 44 × 44 CSS pixels"}
 
         def dialogs_on_compact_screens():
@@ -1046,6 +1047,188 @@ def main():
                 return {"level": 36, "levelAdjustedDamage": 27, "stage": 27, "remainingToBoss": 74,
                     "hpLabel": hp, "cooldownsReadable": True, "upgradeRefresh": True, "bossDeadlineVisible": True}
 
+        def prepare_hold(page, selector):
+            target=page.locator(selector)
+            target.scroll_into_view_if_needed()
+            box=target.bounding_box()
+            assert box and box['width']>=44 and box['height']>=44
+            page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2)
+            return target
+
+        def freeze_progress(page):
+            page.evaluate("window.holdClock=Date.now(); Date.now=()=>holdClock; Data.state.lastActiveAt=holdClock; UI.renderAll()")
+
+        def collections_and_stable_shop():
+            with fresh(stay_intro=True) as (_,page,_):
+                assert '© 2026 엽쌤. All rights reserved.' in page.locator('#intro-screen .copyright-note').inner_text()
+                start_game(page)
+                assert page.locator('#game-app .copyright-note').count()==1
+                assert page.locator('.tab-btn').count()==6
+                assert page.locator('.item-shop-card').count()==24
+                assert page.locator('#relic-list .relic-item').count()==20
+                assert page.locator('.achieve-item').count()==30
+                assert page.evaluate("Data.state.relic.length===4 && Data.state.ach.length===5 && Data.state.extraRelics.length===16 && Data.state.extraAch.length===25")
+                page.locator('#tab-button-shop').click()
+                detail=page.evaluate("""() => {
+                    const buttons=Catalog.items.map(item=>document.getElementById('shop-'+item.id));
+                    UI.renderAll(); UI.renderRes(); CatalogUI.render();
+                    return {stable:buttons.every((button,index)=>button===document.getElementById('shop-'+Catalog.items[index].id)),
+                        uniqueIds:new Set(buttons.map(button=>button.id)).size,
+                        noInlineClicks:buttons.every(button=>!button.hasAttribute('onclick')),
+                        categoryCount:new Set(Catalog.items.map(item=>item.category)).size};
+                }""")
+                assert detail['stable'] and detail['uniqueIds']==24 and detail['noInlineClicks']
+                assert detail['categoryCount']==6
+                category_sizes={'click':6,'auto':6,'xp':4,'gold':4,'crit':2,'boss':2}
+                for category,count in category_sizes.items():
+                    page.locator(f'#item-category-filters [data-item-category="{category}"]').click()
+                    assert page.locator('.item-shop-card:not([hidden])').count()==count
+                    assert page.locator('.item-shop-card').count()==24, 'filtering rebuilt or removed purchase cards'
+                    assert page.locator(f'#item-category-filters [data-item-category="{category}"]').get_attribute('aria-pressed')=='true'
+                page.locator('#item-category-filters [data-item-category="all"]').click()
+                assert page.locator('.item-shop-card:not([hidden])').count()==24
+                return {**detail,'items':24,'relics':20,'achievements':30,'categorySizes':category_sizes,'legacyArraysPreserved':True,'copyrightBothScreens':True}
+
+        def attack_hold_and_release():
+            with fresh() as (_,page,_):
+                freeze_progress(page)
+                before=page.evaluate('Data.state.totalClicks')
+                prepare_hold(page,'#battle-view')
+                page.mouse.down()
+                page.wait_for_timeout(820)
+                during=page.evaluate('Data.state.totalClicks')
+                page.mouse.up()
+                released=page.evaluate('Data.state.totalClicks')
+                assert during-before>=4, 'holding the mouse did not repeat attacks'
+                assert released==during, 'mouse release added a duplicate attack'
+                page.wait_for_timeout(350)
+                assert page.evaluate('Data.state.totalClicks')==released
+                counts={"mouse":during-before}
+                for key in ['Enter','Space']:
+                    page.locator('#battle-view').focus()
+                    before=page.evaluate('Data.state.totalClicks')
+                    page.keyboard.down(key)
+                    page.wait_for_timeout(650)
+                    page.keyboard.up(key)
+                    released=page.evaluate('Data.state.totalClicks')
+                    assert released-before>=4, f'{key} hold did not repeat'
+                    page.wait_for_timeout(350)
+                    assert page.evaluate('Data.state.totalClicks')==released, f'{key} release did not stop'
+                    assert page.evaluate('RepeatInput.active===null')
+                    counts[key]=released-before
+                return {'repeatCounts':counts,'releaseStopsWithoutExtraClick':True}
+
+        def hold_interruptions():
+            with fresh() as (_,page,_):
+                freeze_progress(page)
+                checked=[]
+                for trigger in ['blur','tab','visibility','menu']:
+                    if not page.evaluate('GameApp.playing'): start_game(page)
+                    page.locator('#battle-view').focus()
+                    page.keyboard.down('Enter')
+                    page.wait_for_timeout(380)
+                    if trigger=='blur': page.evaluate("window.dispatchEvent(new Event('blur'))")
+                    elif trigger=='tab': page.evaluate("UI.selectTab($('tab-button-shop'))")
+                    elif trigger=='visibility':
+                        page.evaluate("window.holdHidden=true; Object.defineProperty(document,'hidden',{configurable:true,get:()=>holdHidden}); document.dispatchEvent(new Event('visibilitychange'))")
+                    else: page.evaluate('GameApp.goToIntro()')
+                    stopped=page.evaluate('Data.state.totalClicks')
+                    page.keyboard.up('Enter')
+                    page.wait_for_timeout(400)
+                    assert page.evaluate('Data.state.totalClicks')==stopped, f'{trigger} failed to stop the held action'
+                    assert page.evaluate('RepeatInput.active===null'), f'{trigger} left a repeat timer active'
+                    if trigger=='visibility': page.evaluate("holdHidden=false; document.dispatchEvent(new Event('visibilitychange'))")
+                    checked.append(trigger)
+                return {'stopTriggers':checked}
+
+        def held_purchases_and_limits():
+            with fresh() as (_,page,_):
+                freeze_progress(page)
+                page.evaluate('Data.state.gold=1e9; UI.renderAll()')
+                prepare_hold(page,'#up-click')
+                initial=page.evaluate('Data.state.stat.c.l')
+                page.mouse.down(); page.wait_for_timeout(750); page.mouse.up()
+                upgraded=page.evaluate('Data.state.stat.c.l')
+                assert upgraded-initial>=4, 'held growth purchase did not repeat'
+                page.wait_for_timeout(320)
+                assert page.evaluate('Data.state.stat.c.l')==upgraded
+                page.evaluate('Data.state.gold=1e9; Data.state.stat.crit.p=49; Data.state.stat.crit.l=49; UI.renderAll()')
+                prepare_hold(page,'#up-crit')
+                page.mouse.down(); page.wait_for_timeout(650); page.mouse.up()
+                assert page.evaluate('Data.state.stat.crit.p')==50
+                assert page.locator('#up-crit').is_disabled()
+                page.locator('#tab-button-shop').click()
+                item=page.evaluate('Catalog.items[0].id')
+                page.evaluate("id=>{Data.state.items[id]=0; Data.state.gold=Catalog.itemCost(id,Data.state)+Math.ceil(Catalog.items[0].baseCost*Catalog.items[0].growth); UI.renderAll();}",item)
+                prepare_hold(page,'#shop-'+item)
+                page.mouse.down(); page.wait_for_timeout(750); page.mouse.up()
+                assert page.evaluate('id=>Catalog.itemLevel(id,Data.state)',item)==2, 'held shop purchase did not stop exactly when funds ran out'
+                assert page.evaluate('Data.state.gold')==0
+                assert page.locator('#shop-'+item).is_disabled()
+                page.evaluate('id=>{Data.state.items[id]=24; Data.state.gold=1e9; UI.renderAll();}',item)
+                prepare_hold(page,'#shop-'+item)
+                page.mouse.down(); page.wait_for_timeout(650); page.mouse.up()
+                assert page.evaluate('id=>Catalog.itemLevel(id,Data.state)',item)==25
+                assert page.locator('#shop-'+item).is_disabled()
+                assert page.locator('#item-cost-'+item).inner_text()=='MAX'
+                second=page.evaluate('Catalog.items[1].id')
+                page.evaluate('Data.state.gold=1e9; UI.renderAll()')
+                page.locator('#shop-'+second).scroll_into_view_if_needed()
+                page.locator('#shop-'+second).focus()
+                page.wait_for_timeout(120)  # Focus scrolling is an intentional hold-cancel boundary.
+                page.keyboard.down('Space'); page.wait_for_timeout(750); page.keyboard.up('Space')
+                purchased=page.evaluate('id=>Catalog.itemLevel(id,Data.state)',second)
+                assert purchased>=4, f'keyboard shop hold did not purchase repeatedly: level {purchased}'
+                page.wait_for_timeout(320)
+                assert page.evaluate('id=>Catalog.itemLevel(id,Data.state)',second)==purchased
+                return {'growthLevelsAdded':upgraded-initial,'criticalCap':50,'fundsExhaustedAtItemLevel':2,'itemCap':25,'keyboardItemPurchases':purchased}
+
+        def held_gacha_no_duplicates():
+            with fresh() as (_,page,_):
+                freeze_progress(page)
+                page.evaluate('Data.state.gem=25; UI.renderAll()')
+                page.locator('#tab-button-relic').click()
+                prepare_hold(page,'#btn-gacha')
+                page.mouse.down(); page.wait_for_timeout(750); page.mouse.up()
+                assert page.evaluate('Catalog.relicCount(Data.state)')==2
+                assert page.evaluate('Data.state.gem')==5
+                assert page.locator('#btn-gacha').is_disabled()
+                page.evaluate('Data.state.gem=180; UI.renderAll()')
+                prepare_hold(page,'#btn-gacha')
+                page.mouse.down()
+                try: page.wait_for_function('Catalog.relicCount(Data.state)===20',timeout=5000)
+                finally: page.mouse.up()
+                assert page.evaluate('Data.state.gem')==0
+                assert page.locator('#btn-gacha').is_disabled()
+                assert page.locator('#relic-list .unlocked').count()==20
+                page.wait_for_timeout(350)
+                assert page.evaluate('Catalog.relicCount(Data.state)')==20
+                assert page.evaluate('RepeatInput.active===null')
+                return {'heldDistinctRelics':20,'stopsAtFundsAndCollectionCompletion':True,'totalGemCost':200}
+
+        def touch_hold_and_scroll_cancel():
+            with fresh(mobile=True) as (_,page,_):
+                freeze_progress(page)
+                page.locator('#battle-view').scroll_into_view_if_needed()
+                page.evaluate("""() => {window.touchEvents=(type,id,y)=>$('battle-view').dispatchEvent(new PointerEvent(type,{bubbles:true,isPrimary:true,pointerType:'touch',pointerId:id,button:0,clientX:80,clientY:y})); touchEvents('pointerdown',501,100);}""")
+                before=page.evaluate('Data.state.totalClicks')
+                page.wait_for_timeout(720)
+                during=page.evaluate('Data.state.totalClicks')
+                assert during-before>=4
+                page.evaluate("touchEvents('pointerup',501,100)")
+                page.wait_for_timeout(350)
+                assert page.evaluate('Data.state.totalClicks')==during
+                page.evaluate("touchEvents('pointerdown',502,100); touchEvents('pointermove',502,150)")
+                page.wait_for_timeout(450)
+                page.evaluate("touchEvents('pointerup',502,150)")
+                assert page.evaluate('Data.state.totalClicks')==during, 'scroll gesture caused a held or release attack'
+                page.evaluate("touchEvents('pointerdown',503,100); touchEvents('pointercancel',503,100)")
+                page.wait_for_timeout(450)
+                page.evaluate("touchEvents('pointerup',503,100)")
+                assert page.evaluate('Data.state.totalClicks')==during
+                assert page.evaluate('RepeatInput.active===null')
+                return {'touchHeldRepeats':during-before,'scrollAndCancelledTouchDoNotAttack':True,'releaseStops':True}
+
         def screenshots():
             if not args.screenshots:
                 return {"skipped": "pass --screenshots to save visual review images"}
@@ -1084,9 +1267,22 @@ def main():
                     progressed = directory / f"progressed-{width}x{height}.png"
                     page.screenshot(path=str(progressed), animations="disabled", full_page=True)
                     images.extend([str(initial), str(progressed)])
+                    if width in [320,390,1440] and height in [601,844,900]:
+                        for tab in ['shop','relic','ach']:
+                            page.locator('#tab-button-'+tab).click()
+                            page.locator('#tab-'+tab).scroll_into_view_if_needed()
+                            collection=directory / f'{tab}-{width}x{height}.png'
+                            page.screenshot(path=str(collection),animations='disabled',full_page=True)
+                            images.append(str(collection))
             return {"images": images, "progressedFixture": {"level": 36, "minute": 2, "gold": 1806, "activeNightBuff": True}}
 
         for name, function in [
+            ("expanded collections show 24 items, 20 relics, 30 achievements and stable purchase DOM", collections_and_stable_shop),
+            ("mouse Enter and Space attack holds repeat and release stops without duplicate clicks", attack_hold_and_release),
+            ("blur tab visibility and welcome stop held attacks", hold_interruptions),
+            ("held upgrades and shop purchases repeat and stop at funds and caps", held_purchases_and_limits),
+            ("held gacha collects 20 distinct relics and stops at funds and collection cap", held_gacha_no_duplicates),
+            ("held touch attacks repeat while scrolling and cancelled touches remain safe", touch_hold_and_scroll_cancel),
             ("welcome blocks progression until character selection and Start", intro_gate_and_start),
             ("welcome settles prior away rewards once and excludes menu time", welcome_away_once),
             ("returning to welcome pauses combat and excludes menu rewards", returning_to_welcome_pauses),

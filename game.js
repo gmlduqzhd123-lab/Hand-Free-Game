@@ -15,21 +15,24 @@ const Simulation = {
         damage = GameLimits.multiply(damage, state.relic[2] ? 1.5 : 1);
         damage = GameLimits.multiply(damage, GameLimits.add(1, state.comp.yu.p / 100));
         damage = GameLimits.multiply(damage, this.getMultiplier(state));
+        damage = GameLimits.multiply(damage, 1 + Catalog.bonuses(state).clickPct);
         return Math.floor(GameLimits.multiply(damage, this.getPlayerMultiplier(state)));
     },
     getAutoDamage(state) {
         const base = GameLimits.add(GameLimits.multiply(state.stat.a.p, this.getMilestoneMultiplier(state.stat.a.l)), state.comp.na.p);
-        const damage = GameLimits.multiply(GameLimits.multiply(base, state.relic[0] ? 1.5 : 1), this.getMultiplier(state));
+        let damage = GameLimits.multiply(GameLimits.multiply(base, state.relic[0] ? 1.5 : 1), this.getMultiplier(state));
+        damage = GameLimits.multiply(damage, 1 + Catalog.bonuses(state).autoPct);
         return Math.floor(GameLimits.multiply(damage, this.getPlayerMultiplier(state)));
     },
     calcMobStats(state) {
         const boss = state.mob.boss;
         return {
             hp: Math.floor(GameLimits.multiply(GameLimits.multiply(100, GameLimits.pow(1.15, state.kills)), boss ? 6 : 1)),
-            reward: Math.floor(GameLimits.multiply(GameLimits.multiply(15, GameLimits.pow(1.12, state.kills)), boss ? 5 : 1))
+            reward: Math.floor(GameLimits.multiply(Math.floor(GameLimits.multiply(GameLimits.multiply(15, GameLimits.pow(1.12, state.kills)), boss ? 5 : 1)), 1 + Catalog.bonuses(state).goldPct))
         };
     },
-    bossDuration(state) { return state.relic[3] ? 40000 : 30000; },
+    bossDuration(state) { return (state.relic[3] ? 40000 : 30000) + Catalog.bonuses(state).bossSeconds * 1000; },
+    getCriticalChance(state, now = Date.now()) { return state.buff.nightUntil > now ? 100 : Math.min(50, state.stat.crit.p + Catalog.bonuses(state).critPoints); },
     reconcile(state, now = Date.now()) {
         const maximum = this.calcMobStats(state).hp;
         // Saved partial damage is kept; only a new enemy receives full HP.
@@ -40,6 +43,7 @@ const Simulation = {
         if (!state.mob.boss) state.mob.deadline = 0;
         state.autoRemainder = Number.isFinite(state.autoRemainder) && state.autoRemainder >= 0 && state.autoRemainder < 1 ? state.autoRemainder : 0;
         state.xpRemainder = Number.isFinite(state.xpRemainder) && state.xpRemainder >= 0 && state.xpRemainder < 1 ? state.xpRemainder : 0;
+        state.xpBonusRemainder = Number.isFinite(state.xpBonusRemainder) && state.xpBonusRemainder >= 0 && state.xpBonusRemainder < 1 ? state.xpBonusRemainder : 0;
         return state;
     },
     spawn(state, forceBoss = null, now = Date.now()) {
@@ -84,7 +88,7 @@ const Simulation = {
     damage(state, rawDamage, now, events, options = {}) {
         let damage = GameLimits.finite(rawDamage);
         if (!(damage > 0)) return false;
-        const chance = state.buff.nightUntil > now ? 100 : state.stat.crit.p;
+        const chance = this.getCriticalChance(state, now);
         const critical = !options.auto && chance > 0 && (options.random || Math.random)() * 100 < chance;
         if (critical) damage = GameLimits.multiply(damage, state.relic[1] ? 5 : 3);
         events.lastDamage = damage;
@@ -135,6 +139,7 @@ const Simulation = {
         let clickDamage = this.getClickDamage(state);
         const remainderMs = state.autoRemainder * 1000;
         const xpRemainderMs = state.xpRemainder * 1000;
+        const xpPerSecond = GameLimits.XP_PER_SECOND * (1 + Catalog.bonuses(state).xpPct);
         let nextAuto = autoDamage > 0 ? start + 1000 - remainderMs : Infinity;
         let nextXP = state.player.level < GameLimits.MAX_LEVEL ? start + 1000 - xpRemainderMs : Infinity;
         const rushStarted = state.skill.rush;
@@ -155,7 +160,12 @@ const Simulation = {
             // A level earned at this second boosts attacks at the same timestamp.
             if (nextXP === next) {
                 const previousLevel = state.player.level;
-                this.gainXP(state, GameLimits.XP_PER_SECOND, events);
+                // Equipment can grant a fraction of one XP. Carry that fraction
+                // across seconds, saves, and offline chunks rather than losing it.
+                const xpTotal = xpPerSecond + state.xpBonusRemainder;
+                const xpWhole = Math.floor(xpTotal + 0.000000001);
+                state.xpBonusRemainder = Math.max(0, Math.round((xpTotal - xpWhole) * 1000000000) / 1000000000);
+                this.gainXP(state, xpWhole, events);
                 nextXP = state.player.level < GameLimits.MAX_LEVEL ? nextXP + 1000 : Infinity;
                 if (state.player.level !== previousLevel) {
                     autoDamage = this.getAutoDamage(state);
@@ -211,13 +221,48 @@ const Ach = {
         { id: 1, title: '퇴근 예행 연습', desc: '16:10 보스 처치', condition: s => s.bossKills >= 1, rwd: 20 },
         { id: 2, title: '광란의 손가락', desc: '화면 500회 터치', condition: s => s.totalClicks >= 500, rwd: 15 },
         { id: 3, title: '교실의 보물', desc: '골드 100만 달성', condition: s => s.gold >= 1000000, rwd: 30 },
-        { id: 4, title: '분필 마법사', desc: '분필 마법 Lv 50 달성', condition: s => s.stat.c.l >= 50, rwd: 50 }
+        { id: 4, title: '분필 마법사', desc: '분필 마법 Lv 50 달성', condition: s => s.stat.c.l >= 50, rwd: 50 },
+        { id: 5, title: '첫 번째 준비물', desc: '상점 아이템 1종 구매', condition: s => Catalog.itemCount(s) >= 1, rwd: 3 },
+        { id: 6, title: '설레는 책가방', desc: '상점 아이템 6종 보유', condition: s => Catalog.itemCount(s) >= 6, rwd: 8 },
+        { id: 7, title: '준비물 전문가', desc: '상점 아이템 12종 보유', condition: s => Catalog.itemCount(s) >= 12, rwd: 15 },
+        { id: 8, title: '완벽한 교실', desc: '상점 아이템 24종 모두 보유', condition: s => Catalog.itemCount(s) >= 24, rwd: 30 },
+        { id: 9, title: '차곡차곡 성장', desc: '아이템 레벨 합계 25 달성', condition: s => Catalog.totalItemLevels(s) >= 25, rwd: 5 },
+        { id: 10, title: '마법의 준비물함', desc: '아이템 레벨 합계 100 달성', condition: s => Catalog.totalItemLevels(s) >= 100, rwd: 15 },
+        { id: 11, title: '교실의 장인', desc: '아이템 레벨 합계 300 달성', condition: s => Catalog.totalItemLevels(s) >= 300, rwd: 30 },
+        { id: 12, title: '반짝이는 완성', desc: '모든 아이템 Lv 25 달성', condition: s => Catalog.totalItemLevels(s) >= 600, rwd: 80 },
+        { id: 13, title: '분필에 담긴 힘', desc: '추가 공격 아이템 레벨 합계 10 달성', condition: s => Catalog.categoryLevels('click', s) >= 10, rwd: 8 },
+        { id: 14, title: '든든한 교실 친구', desc: '자동 공격 아이템 레벨 합계 10 달성', condition: s => Catalog.categoryLevels('auto', s) >= 10, rwd: 8 },
+        { id: 15, title: '배움의 즐거움', desc: '경험치 아이템 레벨 합계 10 달성', condition: s => Catalog.categoryLevels('xp', s) >= 10, rwd: 8 },
+        { id: 16, title: '알뜰한 선생님', desc: '골드 아이템 레벨 합계 10 달성', condition: s => Catalog.categoryLevels('gold', s) >= 10, rwd: 8 },
+        { id: 17, title: '반짝이는 눈', desc: '치명타 아이템 2종 보유', condition: s => Catalog.items.filter(item => item.category === 'crit' && Catalog.itemLevel(item, s) > 0).length >= 2, rwd: 8 },
+        { id: 18, title: '마음의 여유', desc: '보스 시간 아이템 레벨 합계 20 달성', condition: s => Catalog.categoryLevels('boss', s) >= 20, rwd: 12 },
+        { id: 19, title: '신나는 첫 수업', desc: '선생님 Lv 5 달성', condition: s => s.player.level >= 5, rwd: 5 },
+        { id: 20, title: '교실의 길잡이', desc: '선생님 Lv 10 달성', condition: s => s.player.level >= 10, rwd: 10 },
+        { id: 21, title: '성장하는 선생님', desc: '선생님 Lv 25 달성', condition: s => s.player.level >= 25, rwd: 25 },
+        { id: 22, title: '별빛 선생님', desc: '선생님 Lv 50 달성', condition: s => s.player.level >= 50, rwd: 50 },
+        { id: 23, title: '백 번의 작은 승리', desc: '현재 모험에서 몬스터 100마리 처치', condition: s => s.kills >= 100, rwd: 10 },
+        { id: 24, title: '교실 수호대장', desc: '현재 모험에서 몬스터 300마리 처치', condition: s => s.kills >= 300, rwd: 20 },
+        { id: 25, title: '겁 없는 선생님', desc: '보스 누적 10마리 처치', condition: s => s.bossKills >= 10, rwd: 30 },
+        { id: 26, title: '반짝 마법 연습', desc: '추가 공격 누적 2,000회', condition: s => s.totalClicks >= 2000, rwd: 20 },
+        { id: 27, title: '마법의 달인', desc: '추가 공격 누적 10,000회', condition: s => s.totalClicks >= 10000, rwd: 50 },
+        { id: 28, title: '교실 보물 도감', desc: '유물 20종 모두 수집', condition: s => Catalog.relicCount(s) >= 20, rwd: 60 },
+        { id: 29, title: '꾸준한 배움', desc: '연수학점 100 달성', condition: s => s.token >= 100, rwd: 30 }
     ],
+    isClaimed(id, state = Data.state) { return Boolean(id < 5 ? state.ach[id] : state.extraAch && state.extraAch[id - 5]); },
+    isReady(id, state = Data.state) { return Boolean(id < 5 ? state.achReady[id] : state.extraAchReady && state.extraAchReady[id - 5]); },
+    setReady(id, state) {
+        if (id < 5) state.achReady[id] = true;
+        else { if (!state.extraAchReady) state.extraAchReady = Array(25).fill(false); state.extraAchReady[id - 5] = true; }
+    },
+    setClaimed(id, state) {
+        if (id < 5) state.ach[id] = true;
+        else { if (!state.extraAch) state.extraAch = Array(25).fill(false); state.extraAch[id - 5] = true; }
+    },
     evaluate(state) {
         let changed = false;
         this.list.forEach(a => {
-            if (!state.achReady[a.id] && (state.ach[a.id] || a.condition(state))) {
-                state.achReady[a.id] = true;
+            if (!this.isReady(a.id, state) && (this.isClaimed(a.id, state) || a.condition(state))) {
+                this.setReady(a.id, state);
                 changed = true;
             }
         });
@@ -225,7 +270,7 @@ const Ach = {
     },
     canClaim(id, state = Data.state) {
         const achievement = this.list[id];
-        return Boolean(achievement && !state.ach[id] && (state.achReady[id] || achievement.condition(state)));
+        return Boolean(achievement && !this.isClaimed(id, state) && (this.isReady(id, state) || achievement.condition(state)));
     },
     check() {
         const changed = this.evaluate(Data.state);
@@ -242,7 +287,7 @@ const Ach = {
         if (!this.canClaim(id)) return false;
         const candidate = Logic.cloneState();
         this.evaluate(candidate);
-        candidate.ach[id] = true;
+        this.setClaimed(id, candidate);
         candidate.gem = GameLimits.add(candidate.gem, this.list[id].rwd);
         if (!Logic.commit(candidate)) return false;
         Logic.sound('ach');
@@ -253,7 +298,7 @@ const Ach = {
     }
 };
 Ach.list.forEach(achievement => {
-    achievement.goal = (state = Data.state) => Boolean(state.achReady[achievement.id] || achievement.condition(state));
+    achievement.goal = (state = Data.state) => Boolean(Ach.isReady(achievement.id, state) || achievement.condition(state));
 });
 
 const Logic = {
@@ -378,7 +423,8 @@ const Logic = {
     },
     isUpgradeMaxed(type, state = Data.state) {
         const upgrade = this.getUpgrade(type, state);
-        return !upgrade || upgrade.current.l >= GameLimits.MAX_LEVEL || upgrade.current.p >= GameLimits.MAX_NUMBER || (upgrade.key === 'crit' && upgrade.current.p >= 50);
+        return !upgrade || upgrade.current.l >= GameLimits.MAX_LEVEL || upgrade.current.p >= GameLimits.MAX_NUMBER ||
+            (upgrade.key === 'crit' && upgrade.current.p + Catalog.bonuses(state).critPoints >= 50);
     },
     canUpgrade(type, state = Data.state) {
         const upgrade = this.getUpgrade(type, state);
@@ -404,19 +450,54 @@ const Logic = {
     },
     // Legacy callers use the button id; state objects are resolved afresh after a transaction.
     up(type) { return this.upgrade(type); },
-    pullGacha() {
+    buyItem(id) {
+        if (!this.canAct()) return false;
+        const item = Catalog.getItem(id);
+        if (!item) return false;
+        this.catchUp();
+        if (!Catalog.canBuyItem(item)) return false;
+        const candidate = this.cloneState();
+        candidate.gold = Math.max(0, candidate.gold - Catalog.itemCost(item, candidate));
+        if (!candidate.items) candidate.items = {};
+        candidate.items[item.id] = Catalog.itemLevel(item, candidate) + 1;
+        if (candidate.mob.boss && item.category === 'boss') {
+            const seconds = Catalog.bonuses(candidate).bossSeconds - Catalog.bonuses(Data.state).bossSeconds;
+            candidate.mob.deadline = Math.min(8640000000000000, Math.ceil(candidate.mob.deadline + seconds * 1000));
+        }
+        Ach.evaluate(candidate);
+        if (!this.commit(candidate)) return false;
+        this.sound('btn');
+        this.sync();
+        Ach.check();
+        this.render();
+        return true;
+    },
+    pullGacha(random = Math.random) {
         if (!this.canAct()) return false;
         this.catchUp();
         if (Data.state.gem < 10) return false;
-        const available = Data.state.relic.flatMap((owned, index) => owned ? [] : [index]);
+        const available = Catalog.relics.flatMap((_, index) => Catalog.ownedRelic(index) ? [] : [index]);
         if (!available.length) { this.toast('모든 유물을 모았습니다!'); return false; }
         const candidate = this.cloneState();
         candidate.gem -= 10;
-        candidate.relic[available[Math.floor(Math.random() * available.length)]] = true;
+        const sample = random();
+        if (!Number.isFinite(sample)) return false;
+        const chosen = available[Math.min(available.length - 1, Math.max(0, Math.floor(sample * available.length)))];
+        if (chosen < 4) candidate.relic[chosen] = true;
+        else {
+            if (!candidate.extraRelics) candidate.extraRelics = Array(16).fill(false);
+            candidate.extraRelics[chosen - 4] = true;
+        }
+        if (candidate.mob.boss && chosen >= 4 && Catalog.relics[chosen].effect === 'bossSeconds') {
+            const seconds = Catalog.bonuses(candidate).bossSeconds - Catalog.bonuses(Data.state).bossSeconds;
+            candidate.mob.deadline = Math.min(8640000000000000, Math.ceil(candidate.mob.deadline + seconds * 1000));
+        }
+        Ach.evaluate(candidate);
         if (!this.commit(candidate)) return false;
         this.sound('gacha');
-        this.toast('🎁 새로운 교실 유물을 발견했어요!');
+        this.toast(`🎁 ${Catalog.relics[chosen].name} 발견! (${Catalog.relicCount(candidate)}/${Catalog.relics.length})`);
         this.sync();
+        Ach.check();
         this.render();
         return true;
     },
@@ -433,10 +514,15 @@ const Logic = {
         candidate.relic = previous.relic.slice();
         candidate.ach = previous.ach.slice();
         candidate.achReady = previous.achReady.slice();
+        candidate.items = { ...previous.items };
+        candidate.extraRelics = (previous.extraRelics || Array(16).fill(false)).slice();
+        candidate.extraAch = (previous.extraAch || Array(25).fill(false)).slice();
+        candidate.extraAchReady = (previous.extraAchReady || Array(25).fill(false)).slice();
         candidate.totalClicks = previous.totalClicks;
         candidate.bossKills = previous.bossKills;
         candidate.player = { ...previous.player };
         candidate.xpRemainder = previous.xpRemainder;
+        candidate.xpBonusRemainder = previous.xpBonusRemainder || 0;
         candidate.skill = { ...previous.skill };
         candidate.sound = previous.sound;
         candidate.character = previous.character;

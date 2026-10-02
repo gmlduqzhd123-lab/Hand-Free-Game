@@ -224,6 +224,8 @@ test("reset never marks a fresh intro as already started", async () => {
 test("prestige retains the chosen teacher and started lifecycle while resetting the adventure", async () => {
     const h = harness();
     await h.Data.ready;
+    const catalog = fs.readFileSync(path.join(__dirname, "..", "catalog.js"), "utf8");
+    vm.runInContext(catalog, h.context, { filename: "catalog.js" });
     const game = fs.readFileSync(path.join(__dirname, "..", "game.js"), "utf8");
     vm.runInContext(game, h.context, { filename: "game.js" });
     vm.runInContext("globalThis.prestige = () => Logic.prestige();", h.context);

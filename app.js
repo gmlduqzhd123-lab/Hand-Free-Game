@@ -17,6 +17,7 @@ const Sys = {
     shakeTimer: null,
     audioWarning: false,
     lastAttackSound: -Infinity,
+    lastGachaSound: -Infinity,
     get sound() { return Data.state.sound !== false; },
 
     async init() {
@@ -85,6 +86,9 @@ const Sys = {
         err: () => Sys.play(440, 'sine', 0.2, 0.012, 0, 392),
         btn: () => Sys.play(698, 'sine', 0.1, 0.012, 0, 784),
         gacha: () => {
+            const now = performance.now();
+            if (now - Sys.lastGachaSound < 320) return;
+            Sys.lastGachaSound = now;
             [523, 659, 784, 1047].forEach((note, i) => Sys.play(note, 'sine', 0.24, 0.014, i * 0.09));
         },
         ach: () => {
@@ -121,6 +125,7 @@ const Sys = {
     },
 
     showDialog(id, focusId) {
+        RepeatInput.stop();
         const dialog = $(id);
         if (!dialog.open) {
             if (typeof dialog.showModal === 'function') dialog.showModal();
@@ -364,8 +369,10 @@ const UI = {
         $('player-xp-fill').style.width = (maximumLevel ? 100 : state.player.xp / requiredXP * 100) + '%';
         $('player-xp-track').setAttribute('aria-valuemax', String(maximumLevel ? 1 : requiredXP));
         $('player-xp-track').setAttribute('aria-valuenow', String(maximumLevel ? 1 : state.player.xp));
+        const xpRate = (GameLimits.XP_PER_SECOND * (1 + Catalog.bonuses(state).xpPct)).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
         $('player-xp-track').setAttribute('aria-valuetext', maximumLevel ? '최고 레벨 달성' :
-            '레벨 ' + state.player.level + ', 경험치 ' + state.player.xp + ' / ' + requiredXP + '. 초당 5 경험치 자동 획득.');
+            '레벨 ' + state.player.level + ', 경험치 ' + state.player.xp + ' / ' + requiredXP + '. 초당 ' + xpRate + ' 경험치 자동 획득.');
+        document.querySelector('.growth-caption').textContent = '경험치 +' + xpRate + ' / 초 ✦ 선생님은 오늘도 성장 중!';
         const hour = 16 + Math.floor(state.min / 60);
         $('clock').textContent = hour + ':' + String(state.min % 60).padStart(2, '0');
         $('hud-gold').textContent = fNum(state.gold);
@@ -377,12 +384,13 @@ const UI = {
             ? '오늘의 모험 달성' : fNum(state.min) + ' / 40분';
         if ($('day-progress-fill')) $('day-progress-fill').style.width = Math.min(100, state.min / 40 * 100) + '%';
         $('preview-token').textContent = fNum(state.min);
-        $('btn-gacha').disabled = !Data.canWrite || state.gem < 10 || state.relic.every(Boolean);
-        $('btn-gacha').setAttribute('aria-label', state.relic.every(Boolean) ? '유물 수집 완료' : '보석 10개로 유물 뽑기');
+        const relicComplete = Catalog.relicCount(state) === Catalog.relics.length;
+        $('btn-gacha').disabled = !Data.canWrite || state.gem < 10 || relicComplete;
+        $('btn-gacha').setAttribute('aria-label', relicComplete ? '유물 수집 완료' : '보석 10개로 유물 뽑기. 누르고 있으면 연속 구매.');
         const descriptors = [
             ['click', state.stat.c, Logic.getC_Dmg(), '분필 마법'],
             ['auto', state.stat.a, Logic.getA_Dmg(), '자동 공격'],
-            ['crit', state.stat.crit, state.stat.crit.p, '치명타'],
+            ['crit', state.stat.crit, Math.min(50, state.stat.crit.p + Catalog.bonuses(state).critPoints), '치명타'],
             ['comp1', state.comp.na, state.comp.na.p, '체육 요정'],
             ['comp2', state.comp.yu, state.comp.yu.p, '응원 요정']
         ];
@@ -404,6 +412,7 @@ const UI = {
         };
         $('mile-click').style.width = milestone(state.stat.c.l) + '%';
         $('mile-auto').style.width = milestone(state.stat.a.l) + '%';
+        CatalogUI.render();
     },
 
     renderHp(now = Date.now()) {
@@ -434,7 +443,7 @@ const UI = {
         timer.style.display = state.mob.boss ? 'block' : 'none';
         if ($('boss-seconds')) $('boss-seconds').textContent = '';
         if (state.mob.boss) {
-            const maximum = state.relic[3] ? 40 : 30;
+            const maximum = Simulation.bossDuration(state) / 1000;
             const seconds = Math.max(0, (state.mob.deadline - now) / 1000);
             const percentage = Math.max(0, Math.min(100, seconds / maximum * 100));
             $('boss-timer-fill').style.width = percentage + '%';
@@ -448,15 +457,15 @@ const UI = {
 
     renderAch() {
         const state = Data.state;
-        const signature = state.ach.map(Number).join('') + ':' +
-            state.achReady.map(Number).join('') + ':' + Data.canWrite;
+        const signature = Ach.list.map(a => Number(Ach.isClaimed(a.id, state))).join('') + ':' +
+            Ach.list.map(a => Number(Ach.isReady(a.id, state))).join('') + ':' + Data.canWrite;
         if (signature === this.achievementSignature) return;
         this.achievementSignature = signature;
         const list = $('ach-list');
         list.replaceChildren();
         for (const achievement of Ach.list) {
-            const done = state.ach[achievement.id];
-            const ready = state.achReady[achievement.id];
+            const done = Ach.isClaimed(achievement.id, state);
+            const ready = Ach.isReady(achievement.id, state);
             const row = document.createElement('div');
             row.className = 'achieve-item' + (done ? ' done' : '');
             const information = document.createElement('div');
@@ -504,6 +513,7 @@ const UI = {
     },
 
     selectTab(button) {
+        RepeatInput.stop();
         const target = button.dataset.target;
         for (const tab of document.querySelectorAll('.tab-btn')) {
             const active = tab === button;
@@ -537,6 +547,148 @@ const UI = {
         this.lastSkillSecond = -1;
         this.renderSkills();
         Data.state.relic.forEach((owned, index) => $('relic-' + index).classList.toggle('unlocked', owned));
+    }
+};
+
+const RepeatInput = {
+    delay: 280,
+    interval: 100,
+    active: null,
+    timer: null,
+    suppressedClick: null,
+
+    resolve(target) {
+        if (!target || typeof target.closest !== 'function') return null;
+        const element = target.closest('[data-repeat-action], #battle-view, #up-click, #up-auto, #up-crit, #up-comp1, #up-comp2, #btn-gacha');
+        if (!element) return null;
+        if (element.id === 'battle-view') return { element, kind: 'attack' };
+        if (element.id === 'btn-gacha') return { element, kind: 'gacha' };
+        if (element.dataset.repeatAction === 'item') return { element, kind: 'item', id: element.dataset.itemId };
+        if (element.id.startsWith('up-')) return { element, kind: 'upgrade', id: element.id.slice(3) };
+        if (element.dataset.repeatAction === 'upgrade') return { element, kind: 'upgrade', id: element.dataset.upgrade };
+        return null;
+    },
+
+    valid(action) {
+        return Boolean(action && Logic.canAct() && !GameApp.recoveryPending &&
+            action.element.isConnected && !action.element.disabled &&
+            !action.element.closest('[hidden], [inert]') && action.element.getClientRects().length &&
+            !document.querySelector('dialog[open]'));
+    },
+
+    perform(action) {
+        if (!this.valid(action)) return false;
+        if (action.kind === 'attack') {
+            const point = Number.isFinite(action.x) ? VFX.point(action.x, action.y) : VFX.center();
+            return Boolean(Combat.attack(point.x, point.y));
+        }
+        if (action.kind === 'upgrade') return Logic.upgrade(action.id);
+        if (action.kind === 'item') return Logic.buyItem(action.id);
+        return Logic.pullGacha();
+    },
+
+    start(action, input) {
+        this.stop();
+        if (!this.valid(action)) return;
+        const session = { ...action, ...input, performed: false };
+        this.active = session;
+        session.element.dataset.holding = 'true';
+        this.suppress(session.element);
+        if (input.source !== 'touch') {
+            session.performed = true;
+            if (!this.perform(session)) { this.stop(); return; }
+        }
+        if (this.active === session) this.timer = setTimeout(() => this.tick(session), this.delay);
+    },
+
+    tick(session) {
+        if (this.active !== session) return;
+        session.performed = true;
+        if (!this.perform(session)) { this.stop(); return; }
+        if (this.active === session) this.timer = setTimeout(() => this.tick(session), this.interval);
+    },
+
+    suppress(element) { this.suppressedClick = { element, until: performance.now() + 1200 }; },
+
+    stop() {
+        clearTimeout(this.timer);
+        this.timer = null;
+        const session = this.active;
+        this.active = null;
+        if (!session) return;
+        this.suppress(session.element);
+        delete session.element.dataset.holding;
+        try {
+            if (session.pointerId !== undefined && session.element.hasPointerCapture(session.pointerId)) {
+                session.element.releasePointerCapture(session.pointerId);
+            }
+        } catch (error) { /* The browser may have cancelled the pointer already. */ }
+    },
+
+    init() {
+        document.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || event.isPrimary === false) return;
+            const action = this.resolve(event.target);
+            if (!action || !this.valid(action)) return;
+            const touch = event.pointerType === 'touch';
+            if (!touch) {
+                event.preventDefault();
+                action.element.focus({ preventScroll: true });
+            }
+            this.start(action, { source: touch ? 'touch' : 'pointer', pointerId: event.pointerId,
+                x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY });
+            if (this.active) {
+                try { action.element.setPointerCapture(event.pointerId); } catch (error) { /* Synthetic events have no native pointer. */ }
+            }
+        });
+        document.addEventListener('pointermove', event => {
+            const session = this.active;
+            if (session && session.source === 'touch' && session.pointerId === event.pointerId &&
+                Math.hypot(event.clientX - session.startX, event.clientY - session.startY) > 12) this.stop();
+        });
+        document.addEventListener('pointerup', event => {
+            const session = this.active;
+            if (!session || session.pointerId !== event.pointerId) return;
+            if (session.source === 'touch' && !session.performed &&
+                Math.hypot(event.clientX - session.startX, event.clientY - session.startY) <= 12) {
+                this.perform(session);
+            }
+            this.stop();
+        });
+        document.addEventListener('pointercancel', () => this.stop());
+        document.addEventListener('contextmenu', () => this.stop());
+        document.addEventListener('lostpointercapture', event => {
+            if (this.active && this.active.pointerId === event.pointerId) this.stop();
+        });
+        document.addEventListener('click', event => {
+            const action = this.resolve(event.target);
+            if (!action) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (this.suppressedClick && this.suppressedClick.element === action.element &&
+                performance.now() < this.suppressedClick.until && event.detail !== 0) return;
+            this.perform(action);
+        }, true);
+        document.addEventListener('keydown', event => {
+            if (!['Enter', ' '].includes(event.key)) return;
+            const action = this.resolve(event.target);
+            if (!action) return;
+            event.preventDefault();
+            if (event.repeat || !this.valid(action)) return;
+            void Sys.init();
+            this.start(action, { source: 'keyboard', key: event.key });
+        });
+        document.addEventListener('keyup', event => {
+            if (this.active && this.active.source === 'keyboard' && this.active.key === event.key) {
+                event.preventDefault();
+                this.stop();
+            }
+        });
+        document.addEventListener('focusout', event => {
+            if (this.active && this.active.source === 'keyboard' && event.target === this.active.element) this.stop();
+        });
+        window.addEventListener('blur', () => this.stop());
+        window.addEventListener('scroll', () => this.stop(), { passive: true });
     }
 };
 
@@ -610,6 +762,7 @@ const GameApp = {
 
     goToIntro(settle = true) {
         if (!this.playing) return;
+        RepeatInput.stop();
         if (settle) this.flush(true);
         this.playing = false;
         VFX.reset();
@@ -629,6 +782,7 @@ const GameApp = {
         if (wasRecovering && !this.recoveryPending) Sys.closeDialog('recovery-dialog');
         const overlay = $('session-overlay');
         const blocked = !Data.canWrite || this.recoveryPending;
+        if (blocked || ['synced', 'imported', 'reset'].includes(status.code)) RepeatInput.stop();
         const justOpened = overlay.hidden && blocked;
         overlay.hidden = !blocked;
         $('game-app').inert = blocked;
@@ -718,6 +872,7 @@ const GameApp = {
         Data.onStatus(status => this.status(status));
         await Data.ready;
         VFX.init();
+        CatalogUI.init();
         this.booted = true;
         this.recoveryPending = Boolean(Data.getRecovery());
         this.installEvents();
@@ -737,38 +892,9 @@ const GameApp = {
 
     installEvents() {
         document.addEventListener('pointerdown', () => { void Sys.init(); }, { capture: true });
+        RepeatInput.init();
         $('btn-start-game').addEventListener('click', () => this.enterGame());
         $('btn-return-intro').addEventListener('click', () => this.goToIntro());
-        let touchAttack = null;
-        const attackAt = event => {
-            if (!this.playing || !Data.canWrite || this.recoveryPending || document.hidden) return;
-            const point = VFX.point(event.clientX, event.clientY);
-            Combat.attack(point.x, point.y);
-        };
-        $('battle-view').addEventListener('pointerdown', event => {
-            if (event.pointerType === 'touch') {
-                if (event.isPrimary === false) return;
-                touchAttack = { id: event.pointerId, x: event.clientX, y: event.clientY };
-                return;
-            }
-            attackAt(event);
-        });
-        $('battle-view').addEventListener('pointerup', event => {
-            if (event.pointerType !== 'touch' || !touchAttack || event.pointerId !== touchAttack.id) return;
-            const point = touchAttack;
-            touchAttack = null;
-            if (Math.hypot(event.clientX - point.x, event.clientY - point.y) <= 12) attackAt(event);
-        });
-        $('battle-view').addEventListener('pointercancel', () => { touchAttack = null; });
-        window.addEventListener('scroll', () => { touchAttack = null; }, { passive: true });
-        $('battle-view').addEventListener('keydown', event => {
-            if (!['Enter', ' '].includes(event.key)) return;
-            event.preventDefault();
-            if (event.repeat || !this.playing || !Data.canWrite || this.recoveryPending) return;
-            void Sys.init();
-            const point = VFX.center();
-            Combat.attack(point.x, point.y);
-        });
         const tabs = Array.from(document.querySelectorAll('.tab-btn'));
         for (const button of tabs) {
             button.addEventListener('click', () => UI.selectTab(button));
@@ -784,9 +910,6 @@ const GameApp = {
                 UI.selectTab(tabs[next]);
                 tabs[next].focus();
             });
-        }
-        for (const type of ['click', 'auto', 'crit', 'comp1', 'comp2']) {
-            $('up-' + type).addEventListener('click', () => Logic.upgrade(type));
         }
         $('backup-download').addEventListener('click', () => Sys.download($('backup-code').value, 'hand-free-game-save.txt'));
         $('backup-close').addEventListener('click', () => Sys.closeDialog('backup-dialog'));
@@ -818,12 +941,13 @@ const GameApp = {
             if (event.target === $('game-app')) $('game-app').classList.remove('shake-light', 'shake-hard');
         });
         document.addEventListener('visibilitychange', () => {
+            RepeatInput.stop();
             if (document.hidden) this.flush(true);
             else this.resume(true);
         });
         // A tab may be closed long after it became hidden. Keep that away
         // interval for the next offline settlement instead of paying it as live play.
-        window.addEventListener('pagehide', () => this.flush());
+        window.addEventListener('pagehide', () => { RepeatInput.stop(); this.flush(); });
         window.addEventListener('pageshow', event => {
             if (event.persisted && typeof Data.resume === 'function') {
                 void Data.resume().then(() => this.resume(true));
