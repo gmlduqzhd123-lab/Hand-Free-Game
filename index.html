@@ -2,35 +2,43 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>4시 40분의 용사: 엽쌤스쿨</title>
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
     <style>
         /* =========================================
            [1. 글로벌 설정 & UI 최적화]
            ========================================= */
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; outline: none; }
-        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #0a0a0a; display: flex; justify-content: center; align-items: center; height: 100dvh; overflow: hidden; touch-action: none; overscroll-behavior: none; }
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background-color: #0a0a0a; display: flex; justify-content: center; align-items: center; min-height: 100vh; min-height: 100dvh; overflow-x: hidden; touch-action: pan-y pinch-zoom; }
+        button, textarea { font: inherit; }
+        button:focus-visible, [tabindex]:focus-visible, textarea:focus-visible { outline: 3px solid #006fbd; outline-offset: -3px; }
+        button { touch-action: manipulation; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
         
-        #game-app { width: 100%; max-width: 480px; height: 100%; background-color: #f1f2f6; display: flex; flex-direction: column; box-shadow: 0 0 50px rgba(0,0,0,1); position: relative; overflow: hidden; }
+        #game-app { width: 100%; max-width: 480px; height: 100vh; height: 100dvh; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); background-color: #f1f2f6; display: flex; flex-direction: column; box-shadow: 0 0 50px rgba(0,0,0,1); position: relative; overflow: hidden; }
         
         .shake-light { animation: shake 0.2s cubic-bezier(.36,.07,.19,.97) both; }
-        .shake-hard { animation: shakeHard 0.4s cubic-bezier(.36,.07,.19,.97) both; filter: contrast(1.2); }
+        .shake-hard { animation: shakeHard 0.4s cubic-bezier(.36,.07,.19,.97) both; }
         @keyframes shake { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
         @keyframes shakeHard { 10% { transform: translate(-8px, -4px) scale(1.02); } 30% { transform: translate(6px, 6px) scale(0.98); } 50% { transform: translate(-6px, 4px) scale(1.01); } }
 
-        #toast { position: absolute; top: 12%; left: 50%; transform: translate(-50%, -20px) scale(0.9); background: rgba(0,0,0,0.85); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 12px 24px; border-radius: 30px; font-weight: 800; font-size: 0.95rem; pointer-events: none; opacity: 0; transition: all 0.3s ease; z-index: 9999; text-align: center; white-space: nowrap; box-shadow: 0 10px 20px rgba(0,0,0,0.5); backdrop-filter: blur(5px); }
+        #toast { position: absolute; top: 12%; left: 50%; width: max-content; max-width: calc(100% - 24px); transform: translate(-50%, -20px) scale(0.9); background: rgba(0,0,0,0.9); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 12px 18px; border-radius: 20px; font-weight: 800; font-size: 0.95rem; pointer-events: none; opacity: 0; transition: all 0.3s ease; z-index: 9999; text-align: center; overflow-wrap: anywhere; box-shadow: 0 10px 20px rgba(0,0,0,0.5); backdrop-filter: blur(5px); }
         #toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+        #toast { white-space: pre-line; }
 
-        #header { flex: 0 0 16%; background: linear-gradient(135deg, #192a56, #273c75); display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 3px solid #0c142b; z-index: 20; position: relative; }
+        #header { flex: 0 0 clamp(88px, 16dvh, 136px); background: linear-gradient(135deg, #192a56, #273c75); display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 3px solid #0c142b; z-index: 20; position: relative; }
         #clock { font-size: 2.5rem; font-weight: 900; color: #fbc531; margin-bottom: 6px; text-shadow: 2px 2px 0 #c23616, 0 0 15px rgba(251,197,49,0.5); letter-spacing: 1px; }
         .hud-row { display: flex; gap: 6px; font-size: 0.95rem; font-weight: 900; width: 100%; justify-content: center; padding: 0 10px; }
         .hud-badge { background: rgba(0,0,0,0.4); padding: 5px 10px; border-radius: 20px; display: flex; align-items: center; gap: 4px; border: 1px solid rgba(255,255,255,0.1); }
         .res-gold { color: #fbc531; } .res-gem { color: #00a8ff; } .res-token { color: #4cd137; }
         
-        #btn-sound { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 50%; width: 35px; height: 35px; font-size: 1rem; cursor: pointer; }
+        #btn-sound { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 50%; width: 44px; height: 44px; font-size: 1rem; cursor: pointer; }
 
-        #battle-view { flex: 0 0 34%; background: radial-gradient(circle, #dcdde1 0%, #7f8fa6 100%); position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px solid #353b48; z-index: 10; cursor: crosshair; transition: background 0.5s; }
+        #battle-view { flex: 0 0 clamp(180px, 34dvh, 320px); min-height: 0; background: radial-gradient(circle, #dcdde1 0%, #7f8fa6 100%); position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px solid #353b48; z-index: 10; cursor: crosshair; transition: background 0.5s; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+        #battle-instructions { position: absolute; bottom: 5px; left: 8px; right: 8px; color: #17233a; text-align: center; font-size: 0.68rem; font-weight: 700; pointer-events: none; }
+        #battle-view.night-mode #battle-instructions { color: #fff; }
         #battle-view.boss-mode { background: radial-gradient(circle, #ff7979 0%, #eb4d4b 100%); box-shadow: inset 0 0 50px rgba(194,54,22,0.8); }
         #battle-view.night-mode { background: radial-gradient(circle, #273c75 0%, #0c142b 100%); }
         #fx-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
@@ -46,7 +54,7 @@
         .hp-track { width: 85%; height: 14px; background-color: #2f3640; border-radius: 7px; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); z-index: 2; }
         .hp-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #e84118, #c23616); transition: width 0.05s; }
 
-        #skill-dock { height: 60px; background: #2f3640; display: flex; justify-content: space-around; align-items: center; padding: 0 10px; border-bottom: 2px solid #192a56; z-index: 15; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        #skill-dock { flex: 0 0 60px; min-height: 60px; background: #2f3640; display: flex; justify-content: space-around; align-items: center; padding: 0 8px; border-bottom: 2px solid #192a56; z-index: 15; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .skill-btn { flex: 1; margin: 0 6px; height: 46px; border-radius: 8px; border: none; color: #fff; position: relative; overflow: hidden; cursor: pointer; box-shadow: 0 4px 0 #192a56; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: transform 0.1s; }
         .skill-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: none; }
         .skill-btn:disabled { background: #718093 !important; box-shadow: 0 4px 0 #353b48 !important; opacity: 0.7; }
@@ -56,16 +64,16 @@
         #btn-s2 { background: linear-gradient(135deg, #9c88ff, #8c7ae6); text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
         .s-title { font-weight: 900; font-size: 0.9rem; z-index: 2; } .s-sub { font-size: 0.65rem; z-index: 2; }
 
-        #panel-area { flex: 1; background-color: #f1f2f6; display: flex; flex-direction: column; overflow: hidden; }
+        #panel-area { flex: 1 1 0; min-height: 0; min-width: 0; background-color: #f1f2f6; display: flex; flex-direction: column; overflow: hidden; }
         #tab-nav { display: flex; height: 45px; background-color: #dcdde1; flex-shrink: 0; }
-        .tab-btn { flex: 1; border: none; background: transparent; font-size: 0.95rem; font-weight: 900; color: #7f8fa6; border-bottom: 4px solid transparent; transition: all 0.2s; position: relative; cursor: pointer; }
+        .tab-btn { flex: 1; min-width: 0; border: none; background: transparent; font-size: 0.95rem; font-weight: 900; color: #4b5768; border-bottom: 4px solid transparent; transition: all 0.2s; position: relative; cursor: pointer; }
         .tab-btn.active { color: #273c75; background-color: #f1f2f6; border-bottom: 4px solid #273c75; }
         
         .noti-dot { position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; background: #e84118; border-radius: 50%; display: none; }
         .noti-dot.show { display: block; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(232,65,24,0.7); } 70% { transform: scale(1.5); box-shadow: 0 0 0 4px rgba(232,65,24,0); } 100% { transform: scale(1); } }
 
-        .tab-view { flex: 1; padding: 10px; overflow-y: auto; display: none; padding-bottom: 30px; animation: slideUp 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .tab-view { flex: 1 1 0; min-height: 0; padding: 10px; overflow-y: auto; overflow-x: hidden; display: none; padding-bottom: 24px; animation: slideUp 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); scrollbar-gutter: stable; overscroll-behavior-y: contain; }
         .tab-view.active { display: block; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
@@ -74,7 +82,7 @@
         
         .up-info { flex: 1; display: flex; flex-direction: column; gap: 4px; padding-right: 10px; z-index: 2; }
         .up-title { font-size: 1.05rem; font-weight: 900; color: #2f3640; display: flex; align-items: center; gap: 5px; }
-        .up-desc { font-size: 0.75rem; color: #718093; word-break: keep-all; }
+        .up-desc { font-size: 0.75rem; color: #536174; word-break: keep-all; }
         .up-stat { font-size: 0.8rem; font-weight: 800; color: #273c75; background: #f1f2f6; padding: 3px 6px; border-radius: 4px; display: inline-block; align-self: flex-start; margin-top: 2px; }
         
         .up-btn { background: linear-gradient(180deg, #487eb0, #273c75); color: white; border: none; padding: 10px 0; width: 85px; border-radius: 8px; font-weight: 900; font-size: 0.9rem; box-shadow: 0 4px 0 #192a56; flex-shrink: 0; transition: transform 0.1s; z-index: 2; cursor: pointer;}
@@ -90,7 +98,7 @@
 
         .achieve-item { background: #fff; border: 1px solid #dcdde1; border-radius: 8px; padding: 10px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
         .achieve-item.done { background: #f1f2f6; opacity: 0.7; }
-        .ach-info { display: flex; flex-direction: column; gap: 3px; } .ach-title { font-weight: 900; font-size: 0.9rem; color: #2f3640; } .ach-desc { font-size: 0.75rem; color: #718093; }
+        .ach-info { display: flex; flex-direction: column; gap: 3px; padding-right: 8px; } .ach-title { font-weight: 900; font-size: 0.9rem; color: #2f3640; } .ach-desc { font-size: 0.75rem; color: #536174; }
         .btn-claim { background: #fbc531; color: #2f3640; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 900; cursor: pointer; box-shadow: 0 3px 0 #e1b12c; }
         .btn-claim:active:not(:disabled) { transform: translateY(3px); box-shadow: none; }
         .btn-claim:disabled { background: #dcdde1; box-shadow: none; color: #a4b0be; cursor: not-allowed; }
@@ -98,53 +106,111 @@
         .setting-panel { background: #fff; border: 1px solid #dcdde1; padding: 15px; border-radius: 10px; margin-bottom: 12px; }
         .btn-half { flex: 1; padding: 10px 0; border-radius: 6px; border: none; font-weight: 900; color: #fff; font-size: 0.95rem; transition: transform 0.1s; cursor: pointer;}
         .btn-half:active { transform: translateY(4px); box-shadow: none !important; }
+
+        .setting-header { font-size: 1rem; font-weight: 900; color: #192a56; margin-bottom: 8px; }
+        .policy-note, .save-note { font-size: 0.8rem; line-height: 1.55; color: #3e4d60; }
+        .policy-note + .policy-note { margin-top: 8px; }
+        #save-status { margin-bottom: 8px; font-weight: 800; }
+        #session-overlay:not([hidden]) { position: absolute; inset: 0; z-index: 10000; background: rgba(10, 16, 29, 0.9); display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .session-card { max-width: 390px; padding: 24px; background: #fff; color: #192a56; border-radius: 14px; line-height: 1.6; }
+        .session-card h2 { font-size: 1.2rem; margin-bottom: 12px; }
+        .session-card button { margin-top: 18px; }
+        dialog { position: fixed; margin: auto; width: min(440px, calc(100% - 24px)); max-height: calc(100dvh - 24px); overflow: auto; border: 0; border-radius: 14px; padding: 22px; background: #fff; color: #192a56; box-shadow: 0 12px 60px rgba(0,0,0,0.4); }
+        dialog::backdrop { background: rgba(0,0,0,0.7); }
+        dialog h2 { font-size: 1.15rem; margin-bottom: 10px; }
+        dialog p, dialog label { font-size: 0.85rem; line-height: 1.6; }
+        dialog label { display: block; margin-top: 14px; font-weight: 800; }
+        dialog textarea { width: 100%; min-height: 120px; margin-top: 6px; padding: 10px; resize: vertical; border: 1px solid #718093; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 0.8rem; color: #192a56; background: #f7f8fb; user-select: text; -webkit-user-select: text; touch-action: auto; }
+        .dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+        .dialog-button { flex: 1 1 auto; min-height: 44px; padding: 10px 12px; color: #fff; background: #273c75; border: 0; border-radius: 6px; font-weight: 800; cursor: pointer; }
+        .dialog-button.secondary { background: #526174; }
+        .dialog-button.danger { background: #b52c0c; }
+        #import-error { color: #a31e0c; margin-top: 8px; min-height: 1.5em; font-size: 0.85rem; }
+        @media (max-width: 359px) {
+            #clock { font-size: 2rem; }
+            .hud-row { font-size: 0.8rem; gap: 4px; }
+            .hud-badge { padding: 5px 7px; }
+            .up-card { padding: 10px; }
+            .up-title { font-size: 0.95rem; }
+            .up-btn { width: 76px; font-size: 0.8rem; }
+            .s-title { font-size: 0.78rem; }
+            .s-sub { font-size: 0.6rem; }
+            .skill-btn { margin: 0 4px; }
+            .tab-btn { font-size: 0.85rem; }
+        }
+        @media (max-height: 650px) {
+            #monster { width: 110px; height: 120px; margin-top: -18px; }
+            #clock { font-size: 2rem; margin-bottom: 4px; }
+        }
+        @media (min-width: 560px) and (max-height: 600px) {
+            #game-app { max-width: 1040px; display: grid; grid-template-columns: 44% minmax(0, 1fr); grid-template-rows: 82px minmax(150px, 1fr) 60px; }
+            #header { grid-column: 1; grid-row: 1; }
+            #battle-view { grid-column: 1; grid-row: 2; }
+            #skill-dock { grid-column: 1; grid-row: 3; }
+            #panel-area { grid-column: 2; grid-row: 1 / 4; border-left: 2px solid #192a56; }
+            #clock { font-size: 1.9rem; }
+            #tab-nav { height: 48px; }
+            .tab-view { padding-top: 12px; }
+        }
+        @media (max-width: 559px) and (max-height: 479px) {
+            #game-app { height: 480px; }
+            body { align-items: flex-start; }
+        }
+        @media (min-width: 560px) and (max-height: 299px) {
+            #game-app { height: 300px; }
+            body { align-items: flex-start; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+        }
     </style>
 </head>
 <body>
 
 <div id="game-app">
-    <div id="toast"></div>
+    <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <header id="header">
-        <button id="btn-sound" onclick="Sys.toggleSound()">🔊</button>
+        <button id="btn-sound" type="button" onclick="Sys.toggleSound()" aria-label="효과음" aria-pressed="true">🔊</button>
         <div id="clock">🕒 16:00</div>
         <div class="hud-row">
-            <span class="hud-badge res-gold">💰 <span id="hud-gold">0</span></span>
-            <span class="hud-badge res-gem">💎 <span id="hud-gem">0</span></span>
-            <span class="hud-badge res-token">🏅 <span id="hud-token">0</span></span>
+            <span class="hud-badge res-gold"><span aria-hidden="true">💰</span><span class="sr-only">골드 </span><span id="hud-gold">0</span></span>
+            <span class="hud-badge res-gem"><span aria-hidden="true">💎</span><span class="sr-only">보석 </span><span id="hud-gem">0</span></span>
+            <span class="hud-badge res-token"><span aria-hidden="true">🏅</span><span class="sr-only">연수학점 </span><span id="hud-token">0</span></span>
         </div>
     </header>
 
-    <main id="battle-view">
-        <canvas id="fx-canvas"></canvas>
-        <div id="boss-timer-wrap"><div id="boss-timer-fill"></div></div>
+    <main id="battle-view" role="button" tabindex="0" aria-label="적 공격" aria-describedby="battle-instructions" aria-keyshortcuts="Enter Space">
+        <canvas id="fx-canvas" aria-hidden="true"></canvas>
+        <div id="boss-timer-wrap" role="progressbar" aria-label="보스 남은 시간" aria-valuemin="0" aria-valuemax="30" aria-valuenow="30"><div id="boss-timer-fill"></div></div>
         <div id="monster">
             <div class="monster-name" id="mob-name">나이스 결재</div>
-            <div class="hp-track"><div class="hp-fill" id="mob-hp"></div></div>
+            <div class="hp-track" id="mob-hp-track" role="progressbar" aria-label="적 체력" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div class="hp-fill" id="mob-hp"></div></div>
         </div>
+        <p id="battle-instructions">화면을 누르거나 Enter / Space로 공격</p>
     </main>
 
     <div id="skill-dock">
-        <button class="skill-btn" id="btn-s1" onclick="Combat.useSkill('rush')">
+        <button class="skill-btn" id="btn-s1" onclick="Combat.useSkill('rush')" type="button">
             <span class="s-title">🏃 랜덤 조퇴 사유</span><span class="s-sub">(5초 광란의 자동클릭)</span>
-            <div class="skill-cd-mask" id="cd-rush"></div>
+            <div class="skill-cd-mask" id="cd-rush" aria-hidden="true"></div>
         </button>
-        <button class="skill-btn" id="btn-s2" onclick="Combat.useSkill('night')">
+        <button class="skill-btn" id="btn-s2" onclick="Combat.useSkill('night')" type="button">
             <span class="s-title">🌙 밤편지 노동요</span><span class="s-sub">(10초 크리티컬 100%)</span>
-            <div class="skill-cd-mask" id="cd-night"></div>
+            <div class="skill-cd-mask" id="cd-night" aria-hidden="true"></div>
         </button>
     </div>
 
     <footer id="panel-area">
-        <nav id="tab-nav">
-            <button class="tab-btn active" data-target="tab-stat">스펙업</button>
-            <button class="tab-btn" data-target="tab-comp">동료</button>
-            <button class="tab-btn" data-target="tab-relic">교보재</button>
-            <button class="tab-btn" data-target="tab-ach">업적<div class="noti-dot" id="noti-ach"></div></button>
-            <button class="tab-btn" data-target="tab-sys">설정</button>
+        <nav id="tab-nav" role="tablist" aria-label="게임 관리">
+            <button class="tab-btn active" id="tab-button-stat" data-target="tab-stat" type="button" role="tab" aria-controls="tab-stat" aria-selected="true" tabindex="0">스펙업</button>
+            <button class="tab-btn" id="tab-button-comp" data-target="tab-comp" type="button" role="tab" aria-controls="tab-comp" aria-selected="false" tabindex="-1">동료</button>
+            <button class="tab-btn" id="tab-button-relic" data-target="tab-relic" type="button" role="tab" aria-controls="tab-relic" aria-selected="false" tabindex="-1">교보재</button>
+            <button class="tab-btn" id="tab-button-ach" data-target="tab-ach" type="button" role="tab" aria-controls="tab-ach" aria-selected="false" tabindex="-1">업적<span class="noti-dot" id="noti-ach" aria-hidden="true"></span></button>
+            <button class="tab-btn" id="tab-button-sys" data-target="tab-sys" type="button" role="tab" aria-controls="tab-sys" aria-selected="false" tabindex="-1">설정</button>
         </nav>
 
-        <div id="tab-stat" class="tab-view active">
+        <div id="tab-stat" class="tab-view active" role="tabpanel" aria-labelledby="tab-button-stat" tabindex="0">
             <div class="up-card">
                 <div class="milestone-bar" id="mile-click"></div>
                 <div class="up-info">
@@ -152,16 +218,16 @@
                     <div class="up-desc">Lv 10, 25, 50 달성 시 딜량 2배 증폭!</div>
                     <div class="up-stat">Lv.<span id="lv-click">1</span> | 딜량: <span id="val-click">10</span></div>
                 </div>
-                <button class="up-btn" id="up-click">💰 <span id="cost-click">50</span></button>
+                <button class="up-btn" id="up-click" type="button" aria-label="캔버스 타건력 강화" aria-describedby="cost-click">💰 <span id="cost-click">50</span></button>
             </div>
             <div class="up-card">
                 <div class="milestone-bar" id="mile-auto"></div>
                 <div class="up-info">
                     <div class="up-title">🧠 자동 파쇄기</div>
-                    <div class="up-desc">Lv 10, 25, 50 달성 시 효율 2배 증폭!</div>
+                    <div class="up-desc">Lv 10, 25, 50 달성 시 효율 2배 증폭! 자동 딜에는 크리티컬·노동요가 적용되지 않습니다.</div>
                     <div class="up-stat">Lv.<span id="lv-auto">0</span> | 초당 딜: <span id="val-auto">0</span></div>
                 </div>
-                <button class="up-btn" id="up-auto">💰 <span id="cost-auto">100</span></button>
+                <button class="up-btn" id="up-auto" type="button" aria-label="자동 파쇄기 강화" aria-describedby="cost-auto">💰 <span id="cost-auto">100</span></button>
             </div>
             <div class="up-card">
                 <div class="up-info">
@@ -169,30 +235,30 @@
                     <div class="up-desc">확률적으로 대미지가 3배 증가합니다. (최대 50%)</div>
                     <div class="up-stat">Lv.<span id="lv-crit">0</span> | 확률: <span id="val-crit">0</span>%</div>
                 </div>
-                <button class="up-btn" id="up-crit">💰 <span id="cost-crit">300</span></button>
+                <button class="up-btn" id="up-crit" type="button" aria-label="크리티컬 결재 강화" aria-describedby="cost-crit">💰 <span id="cost-crit">300</span></button>
             </div>
         </div>
 
-        <div id="tab-comp" class="tab-view">
+        <div id="tab-comp" class="tab-view" role="tabpanel" aria-labelledby="tab-button-comp" tabindex="0">
             <div class="up-card">
                 <div class="up-info">
                     <div class="up-title">🏊‍♂️ 나명심 코치님</div>
                     <div class="up-desc">압도적 피지컬로 방치 딜(자동 딜)을 책임집니다.</div>
-                    <div class="up-stat">방치 보너스: +<span id="val-comp1">0</span></div>
+                    <div class="up-stat">Lv.<span id="lv-comp1">0</span> | 방치 보너스: +<span id="val-comp1">0</span></div>
                 </div>
-                <button class="up-btn" id="up-comp1" style="background: linear-gradient(180deg, #9b59b6, #8e44ad); box-shadow: 0 4px 0 #5e3370;">💰 <span id="cost-comp1">2K</span></button>
+                <button class="up-btn" id="up-comp1" type="button" aria-label="나명심 코치님 강화" aria-describedby="cost-comp1" style="background: linear-gradient(180deg, #9b59b6, #8e44ad); box-shadow: 0 4px 0 #5e3370;">💰 <span id="cost-comp1">2K</span></button>
             </div>
             <div class="up-card">
                 <div class="up-info">
                     <div class="up-title">✨ 유미혜 선생님</div>
                     <div class="up-desc">"엽아 힘내!" 따뜻한 격려로 모든 클릭 딜을 %단위로 증폭시킵니다.</div>
-                    <div class="up-stat">클릭 증폭: +<span id="val-comp2">0</span>%</div>
+                    <div class="up-stat">Lv.<span id="lv-comp2">0</span> | 클릭 증폭: +<span id="val-comp2">0</span>%</div>
                 </div>
-                <button class="up-btn" id="up-comp2" style="background: linear-gradient(180deg, #e84393, #d63031); box-shadow: 0 4px 0 #b33939;">💰 <span id="cost-comp2">5K</span></button>
+                <button class="up-btn" id="up-comp2" type="button" aria-label="유미혜 선생님 강화" aria-describedby="cost-comp2" style="background: linear-gradient(180deg, #e84393, #d63031); box-shadow: 0 4px 0 #b33939;">💰 <span id="cost-comp2">5K</span></button>
             </div>
         </div>
 
-        <div id="tab-relic" class="tab-view">
+        <div id="tab-relic" class="tab-view" role="tabpanel" aria-labelledby="tab-button-relic" tabindex="0">
             <div class="gacha-banner">
                 <h3 style="font-weight:900; font-size:1.1rem; margin-bottom:5px;">🎁 특급 교보재 지원 (가챠)</h3>
                 <p style="font-size:0.75rem; color:#dcdde1; margin-bottom:10px;">초과근무수당(💎)으로 영구 버프 장비를 획득하세요.</p>
@@ -206,11 +272,11 @@
             </div>
         </div>
 
-        <div id="tab-ach" class="tab-view">
+        <div id="tab-ach" class="tab-view" role="tabpanel" aria-labelledby="tab-button-ach" tabindex="0">
             <div id="ach-list"></div>
         </div>
 
-        <div id="tab-sys" class="tab-view">
+        <div id="tab-sys" class="tab-view" role="tabpanel" aria-labelledby="tab-button-sys" tabindex="0">
             <div class="setting-panel" style="background: linear-gradient(135deg, #fff, #fff1f0); border-color:#ff7979;">
                 <div class="setting-header" style="color:#e84118; border-bottom:none; margin-bottom:0;">🏃 내일 출근하기 (환생)</div>
                 <p style="font-size:0.8rem; color:#2f3640; line-height:1.4; margin-bottom:10px;">스테이지와 골드가 초기화되며, 도달 시간에 비례하여 영구 버프인 <strong>연수학점(🏅)</strong>을 정산받습니다. (학점당 전체 딜 10% 증가)</p>
@@ -220,386 +286,69 @@
                 <button class="btn-half" style="width:100%; background:#e84118; box-shadow:0 4px 0 #c23616;" onclick="Logic.prestige()">퇴근 (초기화 및 버프 획득)</button>
             </div>
             <div class="setting-panel">
+                <p id="save-status" class="save-note" role="status" aria-live="polite">저장 상태를 확인하고 있습니다.</p>
                 <div class="setting-header" style="border-bottom:none; margin-bottom:5px;">💾 세이브 백업 (Base64)</div>
+                <p class="save-note" style="margin-bottom:10px;">현재 진행을 코드나 파일로 보관하세요. 다른 기기에서는 데이터 입력으로 이어할 수 있습니다.</p>
                 <div style="display:flex; gap:10px;">
                     <button class="btn-half" style="background:#2ecc71; box-shadow:0 4px 0 #27ae60;" onclick="Sys.export()">코드 복사</button>
                     <button class="btn-half" style="background:#e67e22; box-shadow:0 4px 0 #d35400;" onclick="Sys.import()">데이터 입력</button>
                 </div>
                 <button class="btn-half" style="width:100%; background:#718093; box-shadow:0 4px 0 #353b48; margin-top:10px;" onclick="Sys.hardReset()">전체 데이터 완전 삭제</button>
             </div>
+            <div class="setting-panel">
+                <div class="setting-header">🕒 이어하기 안내</div>
+                <p class="policy-note">적 체력과 진행은 저장됩니다. 보스 제한 시간과 스킬 재사용 시간은 자리를 비운 동안에도 흐릅니다.</p>
+                <p class="policy-note">자리비움 보상은 최대 24시간 동안 자동 전투로 얻는 골드의 70%입니다. 실제 전투 기준으로 계산하며, 클릭·스킬·크리티컬은 포함하지 않습니다.</p>
+                <p class="policy-note">16:40 이후에도 계속 플레이할 수 있습니다. 내일 출근하기로 현재 성장을 정산하고 더 강한 상태로 다시 시작하세요.</p>
+                <p class="policy-note">한 번에 한 탭에서 진행을 저장합니다. 다른 탭이 활성화되면 이 탭을 다시 활성화하여 이어할 수 있습니다.</p>
+            </div>
         </div>
     </footer>
 </div>
 
-<script>
-/* ================== [ Utils & Formatter ] ================== */
-const $ = id => document.getElementById(id);
-// [버그 수정 1] 숫자 오버플로우 방지 (극 단위까지 확장)
-const fNum = n => {
-    if(n < 1000) return Math.floor(n).toLocaleString('ko-KR');
-    const u = ["","만","억","조","경","해","자","양","구","간","정","재","극"]; 
-    let i = 0, num = n;
-    while(num>=10000 && i<u.length-1){ num/=10000; i++; }
-    return num.toFixed(2).replace(/\.00$/,'') + u[i];
-};
+<div id="session-overlay" hidden role="alertdialog" aria-labelledby="session-title" aria-describedby="session-message">
+    <div class="session-card">
+        <h2 id="session-title">다른 탭에서 플레이 중입니다</h2>
+        <p id="session-message">진행을 안전하게 저장하기 위해 이 탭의 게임을 일시 정지했습니다.</p>
+        <button id="btn-takeover" type="button" class="dialog-button">이 탭에서 이어하기</button>
+    </div>
+</div>
 
-/* ================== [ System & Audio ] ================== */
-const Sys = {
-    sound: true, ctx: null, tmr: null,
-    init() { if(!this.ctx) { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); if(this.ctx.state==='suspended') this.ctx.resume(); } },
-    toggleSound() { this.sound = !this.sound; $('btn-sound').innerText = this.sound ? "🔊" : "🔇"; if(this.sound) this.init(); },
-    play(f, t, d, v=0.05) {
-        if(!this.sound || !this.ctx) return;
-        const o=this.ctx.createOscillator(), g=this.ctx.createGain();
-        o.type=t; o.frequency.value=f; g.gain.setValueAtTime(v, this.ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime+d);
-        o.connect(g); g.connect(this.ctx.destination); o.start(); o.stop(this.ctx.currentTime+d);
-    },
-    sfx: {
-        hit: ()=>Sys.play(150,'square',0.1,0.03), crit: ()=>Sys.play(300,'sawtooth',0.15,0.05),
-        coin: ()=>{Sys.play(800,'sine',0.1,0.02); setTimeout(()=>Sys.play(1200,'sine',0.15,0.02),80);},
-        err: ()=>Sys.play(100,'triangle',0.3,0.1), btn: ()=>Sys.play(500,'sine',0.05,0.02),
-        gacha: ()=>{Sys.play(400,'square',0.1,0.05);setTimeout(()=>Sys.play(600,'square',0.2,0.05),150);},
-        ach: ()=>{Sys.play(500,'sine',0.1,0.05);setTimeout(()=>Sys.play(800,'sine',0.2,0.05),100);setTimeout(()=>Sys.play(1000,'sine',0.3,0.05),200);}
-    },
-    toast(msg) {
-        const t = $('toast'); t.innerHTML = msg; t.classList.add('show');
-        clearTimeout(this.tmr); this.tmr = setTimeout(() => t.classList.remove('show'), 2000);
-    },
-    shake(type='light') {
-        const c = $('game-app'); c.classList.remove('shake-light', 'shake-hard');
-        void c.offsetWidth; c.classList.add(`shake-${type}`);
-    },
-    export() { navigator.clipboard.writeText(btoa(encodeURIComponent(JSON.stringify(Data.state)))).then(()=>Sys.toast("✅ 세이브 코드가 복사되었습니다.")); },
-    import() { 
-        const d = prompt("코드를 붙여넣으세요:"); 
-        if(d){ 
-            try { 
-                const decoded = JSON.parse(decodeURIComponent(atob(d))); 
-                if(decoded && decoded.stat) { Data.state = decoded; Data.save(); location.reload(); } else { alert("유효하지 않은 코드입니다."); }
-            }catch(e){alert("잘못된 데이터 형식입니다.");} 
-        } 
-    },
-    hardReset() {
-        if(confirm("정말 모든 데이터를 완전히 삭제하시겠습니까? (복구 불가)")) {
-            localStorage.removeItem(Data.key); location.reload();
-        }
-    }
-};
+<dialog id="backup-dialog" aria-labelledby="backup-title" aria-describedby="backup-description">
+    <h2 id="backup-title">💾 진행 백업</h2>
+    <p id="backup-description">자동 복사가 되지 않으면 아래 코드를 선택하여 복사하거나 백업 파일을 내려받으세요.</p>
+    <label for="backup-code">세이브 코드</label>
+    <textarea id="backup-code" readonly spellcheck="false" autocomplete="off"></textarea>
+    <div class="dialog-actions">
+        <button id="backup-download" type="button" class="dialog-button">백업 파일 다운로드</button>
+        <button id="backup-close" type="button" class="dialog-button secondary">닫기</button>
+    </div>
+</dialog>
 
-// 모바일 터치(더블탭 확대, 스크롤) 오작동 완벽 방어
-document.addEventListener('touchstart', (e)=>{if(e.touches.length>1) e.preventDefault();}, {passive:false});
-document.addEventListener('touchmove', (e)=>{if(e.target.id === 'battle-view' || e.target.id === 'monster') e.preventDefault();}, {passive:false});
-document.body.addEventListener('pointerdown', ()=>Sys.init(), {once:true});
+<dialog id="import-dialog" aria-labelledby="import-title" aria-describedby="import-description">
+    <h2 id="import-title">💾 백업 가져오기</h2>
+    <p id="import-description">저장해 둔 세이브 코드를 붙여넣으세요. 확인 후 현재 진행을 가져온 백업으로 바꿉니다.</p>
+    <label for="import-code">세이브 코드</label>
+    <textarea id="import-code" spellcheck="false" autocomplete="off" aria-describedby="import-error"></textarea>
+    <p id="import-error" role="alert" aria-live="assertive"></p>
+    <div class="dialog-actions">
+        <button id="import-submit" type="button" class="dialog-button">백업 확인 후 적용</button>
+        <button id="import-cancel" type="button" class="dialog-button secondary">취소</button>
+    </div>
+</dialog>
 
-/* ================== [ Data & State ] ================== */
-const Data = {
-    key: 'ys_bugfree_final_v2',
-    def: {
-        min: 0, gold: 0, gem: 0, token: 0, kills: 0, totalClicks: 0,
-        mob: { hp: 100, boss: false }, 
-        stat: { c: {l:1, p:10, c:50}, a: {l:0, p:0, c:100}, crit: {l:0, p:0, c:300} },
-        comp: { na: {l:0, p:0, c:2000}, yu: {l:0, p:0, c:5000} },
-        relic: [false,false,false,false], ach: [false,false,false,false,false],
-        skill: { r: 0, n: 0 }, lastDt: Date.now()
-    },
-    state: {},
-    load() { 
-        let s = JSON.parse(localStorage.getItem(this.key)); 
-        this.state = s ? {...this.def, ...s, stat: s.stat||this.def.stat, comp: s.comp||this.def.comp, ach: s.ach||this.def.ach, relic: s.relic||this.def.relic} : JSON.parse(JSON.stringify(this.def)); 
-        
-        // [버그 수정 2] 로드 시 보스전 도망치기(Exploit) 방어 및 처리
-        if (this.state.mob.boss) {
-            this.state.min = Math.max(0, this.state.min - 1);
-            this.state.kills = Math.max(0, this.state.kills - 1);
-            this.state.mob.boss = false;
-        }
-    },
-    save() { this.state.lastDt = Date.now(); localStorage.setItem(this.key, JSON.stringify(this.state)); }
-};
-Data.load();
+<dialog id="recovery-dialog" aria-labelledby="recovery-title" aria-describedby="recovery-message">
+    <h2 id="recovery-title">저장 데이터를 확인해 주세요</h2>
+    <p id="recovery-message">저장 데이터를 읽지 못했습니다. 원본을 내려받아 보관하거나 백업 코드를 가져올 수 있습니다. 새 게임을 시작하면 현재 저장을 초기화합니다.</p>
+    <div class="dialog-actions">
+        <button id="recovery-download" type="button" class="dialog-button">원본 데이터 다운로드</button>
+        <button id="recovery-close" type="button" class="dialog-button secondary">닫기</button>
+        <button id="recovery-restart" type="button" class="dialog-button danger">새 게임 시작</button>
+    </div>
+</dialog>
 
-/* ================== [ Achievements System ] ================== */
-const Ach = {
-    list: [
-        { id: 0, title: "첫 결재", desc: "공문 10개 파쇄", goal: ()=>Data.state.kills>=10, rwd: 5 },
-        { id: 1, title: "퇴근 예행 연습", desc: "16:10 보스 처치", goal: ()=>Data.state.kills>=100, rwd: 20 },
-        { id: 2, title: "광란의 손가락", desc: "화면 500회 터치", goal: ()=>Data.state.totalClicks>=500, rwd: 15 },
-        { id: 3, title: "부장님의 인정", desc: "골드 100만 달성", goal: ()=>Data.state.gold>=1000000, rwd: 30 },
-        { id: 4, title: "마스터 엽쌤", desc: "타건력 Lv 50 달성", goal: ()=>Data.state.stat.c.l>=50, rwd: 50 }
-    ],
-    check() {
-        let noti = false;
-        this.list.forEach((a, i) => { if(!Data.state.ach[i] && a.goal()) noti = true; });
-        if(noti) $('noti-ach').classList.add('show'); else$('noti-ach').classList.remove('show');
-    },
-    claim(id) {
-        if(Data.state.ach[id] || !this.list[id].goal()) return;
-        Data.state.ach[id] = true; Data.state.gem += this.list[id].rwd;
-        Sys.sfx.ach(); Sys.toast(`🏆 업적 달성! 💎 ${this.list[id].rwd} 획득`);
-        this.check(); UI.renderAch(); UI.renderRes(); Data.save();
-    }
-};
-
-/* ================== [ Canvas VFX Engine ] ================== */
-const VFX = {
-    cvs: $('fx-canvas'), ctx: null, ptc: [],
-    init() { this.ctx = this.cvs.getContext('2d'); window.addEventListener('resize', ()=>this.resize()); this.resize(); },
-    resize() { this.cvs.width = this.cvs.offsetWidth; this.cvs.height = this.cvs.offsetHeight; },
-    add(txt, x, y, type) {
-        const isGold = type==='gold'; const isCrit = type==='crit';
-        const c = isCrit?'#e84118':type==='auto'?'#00a8ff':isGold?'#4cd137':'#fbc531';
-        this.ptc.push({ t:txt, x:x+(Math.random()-0.5)*30, y:y, c:c, s:isCrit?40:isGold?25:20, a:1, vx: (Math.random()-0.5)*4, vy: isGold ? -2 : (isCrit?-6:-4), g: 0.2, life: 1 });
-    },
-    update(dt) {
-        this.ctx.clearRect(0,0,this.cvs.width,this.cvs.height);
-        this.ctx.textAlign = 'center'; this.ctx.textBaseline = 'middle';
-        const fpsRatio = dt / (1000/60); 
-        for(let i=this.ptc.length-1; i>=0; i--) {
-            let p = this.ptc[i];
-            p.vy += p.g * fpsRatio; p.y += p.vy; p.x += p.vx; p.life -= 0.015 * fpsRatio; p.a = Math.max(0, p.life);
-            if(p.life <= 0) { this.ptc.splice(i,1); continue; }
-            this.ctx.font = `900 ${p.s}px Pretendard`;
-            this.ctx.fillStyle = `rgba(0,0,0,${p.a})`; this.ctx.fillText(p.t, p.x+2, p.y+2); 
-            this.ctx.fillStyle = p.c; this.ctx.globalAlpha = p.a; this.ctx.fillText(p.t, p.x, p.y);
-            this.ctx.globalAlpha = 1;
-        }
-    }
-};
-VFX.init();
-
-/* ================== [ Logic & Combat ] ================== */
-const Logic = {
-    names: ["나이스 결재", "협조전 처리", "학급 일지", "체온 측정표", "조퇴 사유서"],
-    bosses: ["6학년 PAPS 측정", "수영부 예산 품의", "보성-강진 연수", "200명 참관 공개수업", "종합 세트 AI 보고서"],
-    bossTime: 0, bossMax: 0, isNight: false, bossActive: false,
-    curMaxHp: 100, curRwd: 15,
-
-    calcMobStats() {
-        let hp = 100 * Math.pow(1.15, Data.state.kills);
-        let rwd = 15 * Math.pow(1.12, Data.state.kills);
-        if(Data.state.mob.boss) { hp *= 6; rwd *= 5; }
-        // NaN 방지
-        this.curMaxHp = isNaN(hp) ? 100 : Math.floor(hp); 
-        this.curRwd = isNaN(rwd) ? 15 : Math.floor(rwd);
-    },
-
-    getMul: () => 1 + (Data.state.token * 0.1),
-    getMileMul(lv) { return lv >= 100 ? 16 : lv >= 50 ? 8 : lv >= 25 ? 4 : lv >= 10 ? 2 : 1; },
-    getC_Dmg() { return Math.floor((Data.state.stat.c.p * this.getMileMul(Data.state.stat.c.l)) * (Data.state.relic[2]?1.5:1) * (1+Data.state.comp.yu.p/100) * this.getMul()); },
-    getA_Dmg() { return Math.floor((Data.state.stat.a.p * this.getMileMul(Data.state.stat.a.l) + Data.state.comp.na.p) * (Data.state.relic[0]?1.5:1) * this.getMul()); },
-
-    spawn(forceBoss=null) {
-        if(forceBoss===null && Data.state.kills>0 && Data.state.kills%10===0) { Data.state.min++; if(Data.state.min===40) Sys.toast("🎉 16:40 달성! 칼퇴 확정!"); }
-        const isB = forceBoss!==null ? forceBoss : (Data.state.kills>0 && Data.state.kills%100===0);
-        
-        Data.state.mob.boss = isB;
-        this.bossActive = isB;
-        this.calcMobStats();
-
-        if(isB) {
-            // [버그 수정 4] 인덱스 -1 참조 방지
-            const bIdx = Math.min(Math.max(0, Math.floor(Data.state.kills/100)-1), 4);
-            $('mob-name').innerText = this.bosses[bIdx];
-            Sys.shake('hard'); this.bossMax = Data.state.relic[3] ? 40 : 30; this.bossTime = this.bossMax;
-        } else {
-            $('mob-name').innerText = this.names[Math.floor(Math.random()*this.names.length)];
-        }
-        Data.state.mob.hp = this.curMaxHp; UI.renderAll(); Ach.check();
-    },
-
-    hit(dmg, x, y, isAuto=false) {
-        let isC = false; const cP = this.isNight ? 100 : Data.state.stat.crit.p;
-        if(!isAuto && cP>0 && Math.random()*100<cP) { dmg *= (Data.state.relic[1]?5:3); isC = true; }
-        
-        Data.state.mob.hp -= dmg;
-        const m = $('monster'); m.classList.remove('hit'); void m.offsetWidth; m.classList.add('hit');
-        if(isC) { Sys.sfx.crit(); Sys.shake('light'); } else if(!isAuto) { Sys.sfx.hit(); }
-        if(x) VFX.add((isC?'💥':'-')+fNum(dmg), x, y, isAuto?'auto':(isC?'crit':'normal'));
-
-        if(Data.state.mob.hp<=0) {
-            Data.state.gold += this.curRwd; Data.state.kills++; Sys.sfx.coin();
-            const r = m.getBoundingClientRect(); VFX.add('+💰'+fNum(this.curRwd), r.left+r.width/2, r.top+r.height/2-20, 'gold');
-            if(Data.state.mob.boss) {
-                this.bossActive = false; const g = 2+Math.floor(Data.state.kills/100); Data.state.gem+=g;
-                setTimeout(()=>Sys.toast(`🎉 보스 격파! 💎${g} 획득`), 300);
-            }
-            this.spawn(null);
-        } else { UI.renderHp(); }
-        UI.renderRes();
-    },
-
-    up(type, cur, cost, gr, form) { if(Data.state.gold >= cost) { Sys.sfx.btn(); Data.state.gold -= cost; cur.l++; cur.c = Math.floor(cur.c*gr); form(cur); UI.renderAll(); Ach.check(); } },
-
-    pullGacha() {
-        if(Data.state.gem < 10) return; Sys.sfx.gacha(); Data.state.gem -= 10;
-        const u = []; Data.state.relic.forEach((h,i)=>{if(!h)u.push(i);});
-        if(u.length===0) { Sys.toast("모든 교보재를 모았습니다! (💎반환)"); Data.state.gem+=10; UI.renderRes(); return; }
-        Data.state.relic[u[Math.floor(Math.random()*u.length)]] = true;
-        Sys.shake('hard'); Sys.toast("🎁 특급 교보재 지원 완료!"); UI.renderAll(); Data.save();
-    },
-
-    prestige() {
-        if(Data.state.min<=0) { Sys.toast("업무를 더 진행하고 퇴근하세요."); return; }
-        if(confirm(`초기화 후 내일 출근합니다.\n연수학점 🏅${fNum(Data.state.min)} 획득!`)) {
-            const m = Data.state.min; const s = Data.state;
-            Data.state = JSON.parse(JSON.stringify(Data.def));
-            // [버그 수정 3] 환생 시 클릭 횟수 및 업적 인계
-            Data.state.token = s.token+m; 
-            Data.state.gem = s.gem; 
-            Data.state.relic = s.relic; 
-            Data.state.ach = s.ach;
-            Data.state.totalClicks = s.totalClicks;
-            
-            Data.save(); location.reload();
-        }
-    }
-};
-
-/* ================== [ Combat & Skills ] ================== */
-const Combat = {
-    sk: { r:{cd:60,d:5}, n:{cd:90,d:10} },
-    useSkill(t) {
-        const n = Date.now(), c = this.sk[t].cd*1000; if(n - Data.state.skill[t] < c) return;
-        Data.state.skill[t] = n; Sys.sfx.gacha();
-        if(t==='rush') {
-            Sys.toast("🏃 랜덤 조퇴 사유 발동!"); $('monster').style.transform='scale(0.9)';
-            const i = setInterval(()=>Logic.hit(Logic.getC_Dmg(), VFX.cvs.width/2, VFX.cvs.height/2, false), 80);
-            setTimeout(()=>{clearInterval(i); $('monster').style.transform='';}, this.sk[t].d*1000);
-        } else {
-            Logic.isNight = true; $('battle-view').classList.add('night-mode'); Sys.toast("🌙 밤편지 노동요! (크리 100%)");
-            setTimeout(()=>{Logic.isNight=false; $('battle-view').classList.remove('night-mode');}, this.sk[t].d*1000);
-        }
-    }
-};
-
-/* ================== [ UI Update ] ================== */
-const UI = {
-    renderRes() {
-        let h = 16+Math.floor(Data.state.min/60), m = Data.state.min%60;
-        $('clock').innerText = `🕒 ${h}:${m.toString().padStart(2,'0')}`;
-        $('hud-gold').innerText = fNum(Data.state.gold); $('hud-gem').innerText = fNum(Data.state.gem);$('hud-token').innerText = fNum(Data.state.token);
-        $('preview-token').innerText = fNum(Data.state.min);$('btn-gacha').disabled = Data.state.gem<10;
-        
-        const st = Data.state.stat, cp = Data.state.comp;
-        const upB = (id, o, v) => { $(`lv-${id}`).innerText=o.l; $(`val-${id}`).innerText=v; $(`cost-${id}`).innerText=fNum(o.c); $(`up-${id}`).disabled = Data.state.gold < o.c; }
-        upB('click', st.c, fNum(Logic.getC_Dmg())); upB('auto', st.a, fNum(Logic.getA_Dmg())); upB('crit', st.crit, st.crit.p);
-        upB('comp1', cp.na, fNum(cp.na.p)); upB('comp2', cp.yu, cp.yu.p);
-
-        const getPct = lv => { const t = lv>=100?100 : lv>=50?100 : lv>=25?50 : lv>=10?25 : 10; const p = lv>=50?50 : lv>=25?25 : lv>=10?10 : 0; return ((lv-p)/(t-p))*100; };
-        $('mile-click').style.width = `${getPct(st.c.l)}%`; $('mile-auto').style.width = `${getPct(st.a.l)}%`;
-    },
-    renderHp() {
-        $('mob-hp').style.width = `${Math.max(0, (Data.state.mob.hp/Logic.curMaxHp)*100)}%`;
-        if(Data.state.mob.boss) { $('battle-view').classList.add('boss-mode'); $('monster').classList.add('boss');$('boss-timer-wrap').style.display='block'; }
-        else { $('battle-view').classList.remove('boss-mode'); $('monster').classList.remove('boss');$('boss-timer-wrap').style.display='none'; }
-    },
-    renderAch() {
-        const list = $('ach-list'); list.innerHTML = '';
-        Ach.list.forEach(a => {
-            const done = Data.state.ach[a.id]; const can = a.goal();
-            list.innerHTML += `<div class="achieve-item ${done?'done':''}"><div class="ach-info"><div class="ach-title">${a.title}</div><div class="ach-desc">${a.desc}</div></div><button class="btn-claim" ${done||!can?'disabled':''} onclick="Ach.claim(${a.id})">${done?'완료':`💎 ${a.rwd}`}</button></div>`;
-        });
-    },
-    renderAll() { this.renderRes(); this.renderHp(); this.renderAch(); Data.state.relic.forEach((h,i)=>{if(h)$(`relic-${i}`).classList.add('unlocked');}); }
-};
-
-/* ================== [ Game Loop & Offline Progress ] ================== */
-let lastTime = performance.now();
-let autoTimer = 0;
-
-function gameLoop(now) {
-    let dt = now - lastTime; lastTime = now;
-    // [버그 수정 5] 탭 전환 시 DeltaTime 캡핑을 통한 물리엔진 폭주 방어
-    if(dt > 100) dt = 16; 
-    
-    VFX.update(dt);
-    
-    if (Logic.bossActive) {
-        Logic.bossTime -= (dt/1000);
-        const pct = (Logic.bossTime/Logic.bossMax)*100;
-        $('boss-timer-fill').style.width = `${pct}%`;
-        $('boss-timer-fill').style.backgroundColor = pct<30 ? '#e84118' : '#fbc531';
-        
-        if(Logic.bossTime <= 0) {
-            Sys.sfx.err(); Sys.shake('hard'); Sys.toast("❌ 기한 만료! 서류 반려됨.");
-            Data.state.min = Math.max(0, Data.state.min-1); Data.state.kills--; Logic.spawn(false);
-        }
-    }
-
-    autoTimer += dt;
-    if (autoTimer >= 1000) {
-        autoTimer -= 1000;
-        const a = Logic.getA_Dmg(); if(a>0) Logic.hit(a, VFX.cvs.width/2, VFX.cvs.height/2+30, true);
-    }
-
-    const timeNow = Date.now();
-    ['rush','night'].forEach(t => {
-        const c = Combat.sk[t].cd*1000, p = timeNow - Data.state.skill[t];
-        const btn = $(`btn-s${t==='rush'?1:2}`), mask = $(`cd-${t}`);
-        if(p<c) { btn.disabled=true; mask.style.height=`${100-(p/c)*100}%`; } else { btn.disabled=false; mask.style.height='0%'; }
-    });
-
-    requestAnimationFrame(gameLoop);
-}
-
-function calcOfflineProgress() {
-    const now = Date.now();
-    const offSecs = Math.floor((now - Data.state.lastDt)/1000);
-    const dps = Logic.getA_Dmg();
-    
-    if (offSecs > 60 && dps > 0) {
-        const validSecs = Math.min(offSecs, 86400); // 최대 24시간
-        const timeToKill = Logic.curMaxHp / dps;
-        const gPerSec = Logic.curRwd / timeToKill;
-        const earned = Math.floor(validSecs * gPerSec * 0.7); // 30% 페널티
-        
-        if (earned > 0) { 
-            Data.state.gold += earned; 
-            setTimeout(()=>Sys.toast(`⏰ 자리 비움 결재 완료!<br>수익: 💰${fNum(earned)}`), 800); 
-            UI.renderRes();
-        }
-    }
-    Data.state.lastDt = now;
-    lastTime = performance.now(); // 델타 타임 초기화
-}
-
-// 브라우저 탭 복귀 감지
-document.addEventListener('visibilitychange', () => { if(!document.hidden) calcOfflineProgress(); });
-
-/* ================== [ Init & Event Listeners ] ================== */
-$('battle-view').addEventListener('pointerdown', e => { 
-    if(e.target.id!=='skill-dock' && !e.target.classList.contains('skill-btn')) { 
-        Data.state.totalClicks++; 
-        Logic.hit(Logic.getC_Dmg(), e.clientX, e.clientY-($('header').offsetHeight), false); 
-    } 
-});
-
-document.querySelectorAll('.tab-btn').forEach(b => {
-    b.onclick = () => { Sys.sfx.btn(); document.querySelectorAll('.tab-btn, .tab-view').forEach(x=>x.classList.remove('active')); b.classList.add('active'); $(b.getAttribute('data-target')).classList.add('active'); Ach.check(); }
-});
-
-const bEvt = (id, o, gr, fm) => $(id).onclick = () => Logic.up(id, o, o.c, gr, fm);
-bEvt('up-click', Data.state.stat.c, 1.5, s=>s.p=Math.floor(s.p*1.4+5));
-bEvt('up-auto', Data.state.stat.a, 1.6, s=>s.p=s.l===1?5:Math.floor(s.p*1.4+2));
-$('up-crit').onclick = () => { if(Data.state.stat.crit.p<50) Logic.up('up-crit', Data.state.stat.crit, Data.state.stat.crit.c, 2.0, s=>s.p+=1); }
-bEvt('up-comp1', Data.state.comp.na, 1.8, s=>s.p=Math.floor(s.p*1.5+50));
-bEvt('up-comp2', Data.state.comp.yu, 2.2, s=>s.p+=10);
-
-setInterval(() => Data.save(), 5000);
-
-// 최초 실행 세팅
-Logic.calcMobStats();
-Data.state.mob.hp = Logic.curMaxHp;
-if(Data.state.mob.boss) {
-    Logic.bossActive = true;
-    Logic.bossMax = Data.state.relic[3] ? 40 : 30;
-    Logic.bossTime = Logic.bossMax;
-}
-
-calcOfflineProgress();
-UI.renderAll(); Ach.check();
-requestAnimationFrame(gameLoop);
-</script>
+<script src="save.js" defer></script>
+<script src="game.js" defer></script>
+<script src="app.js" defer></script>
 </body>
 </html>
