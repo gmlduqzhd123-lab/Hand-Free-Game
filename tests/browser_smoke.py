@@ -366,15 +366,20 @@ def main():
                 before = page.evaluate("Data.state.totalClicks")
                 page.locator("#battle-view").tap(position={"x": 25, "y": 30})
                 assert page.evaluate("Data.state.totalClicks") == before + 1
-                scroll_probe=page.evaluate("""() => {
+                scroll_probe=page.evaluate("""async () => {
                     const battle=$('battle-view'), before=Data.state.totalClicks;
                     const event=(type,id,y)=>battle.dispatchEvent(new PointerEvent(type,{bubbles:true,isPrimary:true,pointerType:'touch',pointerId:id,clientX:30,clientY:y}));
                     event('pointerdown',91,30); event('pointermove',91,70); event('pointerup',91,70);
                     event('pointerdown',92,30); event('pointercancel',92,30); event('pointerup',92,30);
-                    event('pointerdown',93,30); window.dispatchEvent(new Event('scroll')); event('pointerup',93,30);
-                    return Data.state.totalClicks===before;
+                    event('pointerdown',93,30);
+                    const scrollBefore=scrollY;
+                    window.scrollBy(0,80);
+                    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+                    event('pointerup',93,30);
+                    return {unchanged:Data.state.totalClicks===before,scrollMoved:scrollY!==scrollBefore};
                 }""")
-                assert scroll_probe, "touch scrolling or cancelled gestures caused attacks"
+                assert scroll_probe['scrollMoved'], "the scrolling probe did not actually move the viewport"
+                assert scroll_probe['unchanged'], "touch scrolling or cancelled gestures caused attacks"
                 page.set_viewport_size({"width": 844, "height": 390})
                 page.locator("#btn-s1").tap()
                 assert page.evaluate("Data.state.skill.rush") > 0
@@ -1328,6 +1333,121 @@ def main():
                 assert page.evaluate('RepeatInput.active===null')
                 return {'touchHeldRepeats':during-before,'scrollAndCancelledTouchDoNotAttack':True,'releaseStops':True}
 
+        def long_mobile_touch_holds(with_menu=False):
+            with fresh(mobile=True) as (context,page,_):
+                freeze_progress(page)
+                page.evaluate("""() => {
+                    Data.state.gold=1e16; UI.renderAll();
+                    window.longTouchEvents=[]; window.longTouchReleases=[];
+                    document.addEventListener('pointerdown',event=>longTouchEvents.push({trusted:event.isTrusted,pointerType:event.pointerType}),true);
+                    document.addEventListener('pointerup',event=>{
+                        if(event.pointerType==='touch') longTouchReleases.push({attack:Data.state.totalClicks,growth:Data.state.stat.c.l,shop:Catalog.itemLevel(Catalog.items[0])});
+                    },true);
+                }""")
+                cdp=context.new_cdp_session(page)
+                cases=[]
+                for kind,selector,metric in [
+                    ('attack','#teacher-sprite','Data.state.totalClicks'),
+                    ('growth','#up-click','Data.state.stat.c.l'),
+                    ('shop','#shop-'+page.evaluate('Catalog.items[0].id'),'Catalog.itemLevel(Catalog.items[0])')
+                ]:
+                    page.locator('#tab-button-shop' if kind=='shop' else '#tab-button-stat').click()
+                    target=page.locator(selector)
+                    target.scroll_into_view_if_needed()
+                    page.wait_for_timeout(150)
+                    box=target.bounding_box()
+                    before=page.evaluate(metric)
+                    header_before=page.locator('#header').bounding_box()['height']
+                    scroll_before=page.evaluate('scrollY')
+                    cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':box['x']+box['width']/2,'y':box['y']+box['height']/2}]})
+                    menu_prevented=None
+                    try:
+                        if with_menu:
+                            page.wait_for_timeout(500)
+                            # Mobile OS menus are not native to desktop Chromium.
+                            # Keep this injected menu distinct from trusted touch.
+                            menu_prevented=target.evaluate("el=>{const event=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});el.dispatchEvent(event);return event.defaultPrevented}")
+                            assert menu_prevented, f'{kind} longpress menu was not prevented'
+                            assert page.evaluate("RepeatInput.active && RepeatInput.active.source==='touch'"), f'{kind} menu ended the held action after about three repetitions'
+                            page.wait_for_timeout(4500)
+                        else: page.wait_for_timeout(5000)
+                        during=page.evaluate(metric)
+                        if kind=='shop':
+                            assert during==25, 'five-second shop touch did not reach its intended level cap'
+                            assert target.is_disabled()
+                            assert page.evaluate('RepeatInput.active===null'), 'capped shop kept repeating'
+                        else:
+                            assert during-before>=25, f'five-second {kind} touch stopped early after {during-before} actions'
+                            assert page.evaluate("RepeatInput.active && RepeatInput.active.source==='touch'"), f'five-second {kind} touch lost its active session'
+                    finally:
+                        cdp.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+                    # A final timer tick can run between the earlier metric read
+                    # and the CDP release command. Measure at the actual event.
+                    released=page.evaluate('longTouchReleases[longTouchReleases.length-1]')[kind]
+                    assert page.evaluate(metric)==released, 'touch release produced an extra action'
+                    page.wait_for_timeout(350)
+                    assert page.evaluate(metric)==released and page.evaluate('RepeatInput.active===null'), 'touch release left the timer running'
+                    cases.append({'kind':kind,'actionsAdded':released-before,'heldMs':5000,'syntheticMenuAtMs':500 if with_menu else None,'syntheticMenuPrevented':menu_prevented,
+                        'headerHeightBefore':header_before,'headerHeightAfter':page.locator('#header').bounding_box()['height'],'scrollBefore':scroll_before,'scrollAfter':page.evaluate('scrollY')})
+                touch_events=page.evaluate('longTouchEvents.filter(event=>event.pointerType==="touch")')
+                assert len(touch_events)==3 and all(event['trusted'] for event in touch_events), 'the long holds did not use trusted Chromium touch events'
+                return {'trustedChromiumTouch':True,'nativePhoneOSMenuEmulated':False,'cases':cases,'releaseStops':True}
+
+        def mobile_touch_cancel_swipe_and_selection():
+            with fresh(mobile=True) as (context,page,_):
+                freeze_progress(page)
+                page.evaluate('Data.state.gold=1e10; UI.renderAll()')
+                cdp=context.new_cdp_session(page)
+                def touch_point(selector):
+                    target=page.locator(selector)
+                    target.scroll_into_view_if_needed()
+                    page.wait_for_timeout(150)
+                    box=target.bounding_box()
+                    return {'x':box['x']+box['width']/2,'y':box['y']+box['height']/2}
+                point=touch_point('#teacher-sprite')
+                cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[point]})
+                page.wait_for_timeout(650)
+                cdp.send('Input.dispatchTouchEvent',{'type':'touchCancel','touchPoints':[]})
+                cancelled=page.evaluate('Data.state.totalClicks')
+                page.wait_for_timeout(450)
+                assert page.evaluate('Data.state.totalClicks')==cancelled and page.evaluate('RepeatInput.active===null'), 'trusted touchCancel left held attacks running'
+                page.locator('#tab-button-shop').click()
+                item=page.evaluate('Catalog.items[0].id')
+                point=touch_point('#shop-'+item)
+                before=page.evaluate('Catalog.itemLevel(Catalog.items[0])')
+                initial_scroll=page.evaluate('scrollY')
+                cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[point]})
+                page.wait_for_timeout(50)
+                for distance in [20,50,90,140]:
+                    cdp.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':point['x'],'y':point['y']-distance}]})
+                    page.wait_for_timeout(20)
+                cdp.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+                page.wait_for_timeout(450)
+                assert page.evaluate('Catalog.itemLevel(Catalog.items[0])')==before, 'swiping on a purchase button bought an item or generated a ghost click'
+                scroll_distance=page.evaluate('scrollY')-initial_scroll
+                assert scroll_distance>0, 'longpress protection blocked natural page scrolling'
+                assert page.evaluate('RepeatInput.active===null')
+                point=touch_point('#shop-'+item)
+                cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[point]})
+                page.wait_for_timeout(70)
+                cdp.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+                page.wait_for_timeout(350)
+                assert page.evaluate('Catalog.itemLevel(Catalog.items[0])')==before+1, 'a short trusted tap did not purchase exactly once'
+                styles=page.evaluate("({battle:getComputedStyle($('teacher-sprite')).userSelect,purchase:getComputedStyle(document.querySelector('.item-buy-button .item-cost')).userSelect,touchAction:getComputedStyle($('battle-view')).touchAction})")
+                assert styles['battle']=='none' and styles['purchase']=='none'
+                assert styles['touchAction']!='none', 'repeat controls disable all touch scrolling'
+                page.evaluate('Sys.export()')
+                page.locator('#backup-dialog').wait_for(state='visible')
+                textarea=page.locator('#backup-code')
+                textarea.focus()
+                page.keyboard.press('ControlOrMeta+A')
+                selection=textarea.evaluate("el=>({userSelect:getComputedStyle(el).userSelect,selected:el.selectionEnd-el.selectionStart,length:el.value.length,calloutSupported:CSS.supports('-webkit-touch-callout','none'),callout:getComputedStyle(el).getPropertyValue('-webkit-touch-callout')})")
+                assert selection['userSelect']=='text' and selection['selected']==selection['length'] and selection['length']>100, 'longpress CSS prevented backup code selection'
+                if selection['calloutSupported']: assert selection['callout']!='none'
+                menu_prevented=textarea.evaluate("el=>{const event=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});el.dispatchEvent(event);return event.defaultPrevented}")
+                assert menu_prevented is False, 'backup textarea lost its normal copy context menu'
+                return {'trustedCancellationStops':True,'swipeAddedPurchases':0,'swipeScrollPx':scroll_distance,'shortTapPurchases':1,'repeatControlStyles':styles,'backupSelection':selection,'backupMenuPreserved':True}
+
         def screenshots():
             if not args.screenshots:
                 return {"skipped": "pass --screenshots to save visual review images"}
@@ -1384,6 +1504,9 @@ def main():
             ("immediate Tab focus scroll preserves keyboard purchase holds on desktop and mobile", keyboard_purchase_after_tab_scroll),
             ("wheel and scroll keys cancel keyboard attack holds", keyboard_navigation_cancels_holds),
             ("held touch attacks repeat while scrolling and cancelled touches remain safe", touch_hold_and_scroll_cancel),
+            ("mobile five second holds use trusted touch and release safely", lambda:long_mobile_touch_holds(False)),
+            ("mobile five second holds survive synthetic 500ms longpress menus", lambda:long_mobile_touch_holds(True)),
+            ("mobile hold cancellation swipe tap and backup text selection remain usable", mobile_touch_cancel_swipe_and_selection),
             ("welcome blocks progression until character selection and Start", intro_gate_and_start),
             ("welcome settles prior away rewards once and excludes menu time", welcome_away_once),
             ("returning to welcome pauses combat and excludes menu rewards", returning_to_welcome_pauses),

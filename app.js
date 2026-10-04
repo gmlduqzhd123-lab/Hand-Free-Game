@@ -591,6 +591,12 @@ const RepeatInput = {
         this.stop();
         if (!this.valid(action)) return;
         const session = { ...action, ...input, performed: false };
+        if (input.source === 'touch') {
+            const rect = session.element.getBoundingClientRect();
+            session.viewportTop = rect.top;
+            session.viewportBottom = rect.bottom;
+            session.startScrollX = window.scrollX;
+        }
         this.active = session;
         session.element.dataset.holding = 'true';
         this.suppress(session.element);
@@ -657,7 +663,17 @@ const RepeatInput = {
             this.stop();
         });
         document.addEventListener('pointercancel', () => this.stop());
-        document.addEventListener('contextmenu', () => this.stop());
+        document.addEventListener('contextmenu', event => {
+            const action = this.resolve(event.target);
+            // Mobile long presses may request a menu while the finger is still
+            // down. That menu must not end the active attack or purchase hold.
+            if (this.active && this.active.source === 'touch' && action &&
+                action.element === this.active.element && !['mouse', 'pen'].includes(event.pointerType)) {
+                event.preventDefault();
+                return;
+            }
+            this.stop();
+        });
         document.addEventListener('lostpointercapture', event => {
             if (this.active && this.active.pointerId === event.pointerId) this.stop();
         });
@@ -694,6 +710,13 @@ const RepeatInput = {
         window.addEventListener('wheel', () => this.stop(), { passive: true });
         window.addEventListener('scroll', () => {
             const session = this.active;
+            // HUD wrapping can make the browser adjust its scroll anchor while
+            // the held control stays under the stationary finger.
+            if (session && session.source === 'touch' && window.scrollX === session.startScrollX) {
+                const rect = session.element.getBoundingClientRect();
+                if (Math.abs(rect.top - session.viewportTop) <= 0.5 &&
+                    Math.abs(rect.bottom - session.viewportBottom) <= 0.5) return;
+            }
             // Focus scrolling can finish after keydown. Keep its visible target
             // repeating; wheel, scroll keys and pointer input stop navigation.
             if (session && session.source === 'keyboard' && document.activeElement === session.element) {

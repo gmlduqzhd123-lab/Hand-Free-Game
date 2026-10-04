@@ -235,6 +235,7 @@ dialog p,dialog label,dialog textarea,#import-error,.session-card p { font-size:
 @media (min-width:1200px) { #tab-nav { grid-template-columns:repeat(6,minmax(0,1fr)); }.tab-btn { font-size:16px; gap:4px; }.tab-btn .icon { width:16px; height:16px; } }
 .up-btn[data-holding='true'] { border-color:#d8b36d; outline:2px solid #e0c38e; outline-offset:2px; }
 #battle-view[data-holding='true'] { border-color:#ecd08c; box-shadow:0 0 0 2px #d8ba7744,0 5px 0 #d8c6aa; }
+#battle-view, #battle-view *, [data-repeat-action], [data-repeat-action] * { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 @media (max-width:699px) {
     .copyright-note { font-size:14px; margin-top:20px; }#tab-nav { grid-template-columns:repeat(3,minmax(0,1fr)); }.tab-btn { height:49px; }
     .item-shop-card { grid-template-columns:32px minmax(0,1fr); gap:10px; padding:14px 11px; }.item-shop-icon { width:32px; height:38px; font-size:22px; }
