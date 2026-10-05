@@ -6,6 +6,10 @@ body { padding:32px 24px; font-size:16px; background:radial-gradient(ellipse at 
 .intro-brand { display:inline-flex; align-items:center; gap:12px; color:#44364f; text-decoration:none; font-weight:800; font-size:18px; letter-spacing:-.5px; }
 .intro-brand-mark { display:grid; place-items:center; width:42px; height:42px; border-radius:13px; background:#443751; color:#f7d58e; font-size:30px; }
 .intro-edition { color:#958371; font-size:14px; }
+.intro-topline-end { display:flex; align-items:center; gap:12px; }
+.intro-install { min-height:38px; padding:0 14px; border:1px solid #d8c7ad; border-radius:999px; background:#fffaf1; color:#443751; font:inherit; font-size:14px; font-weight:700; white-space:nowrap; cursor:pointer; }
+.intro-install:hover { background:#f7ecd9; }
+@media (max-width: 560px) { .intro-topline-end .intro-edition { display:none; } }
 .intro-layout { display:grid; grid-template-columns:1fr 1fr; align-items:center; gap:64px; padding:46px 0 40px; }
 .intro-kicker { display:flex; align-items:center; gap:9px; font-size:14px; color:#8b725b; font-weight:650; letter-spacing:.3px; }
 .intro-kicker span { color:#c99d5d; font-size:22px; }
