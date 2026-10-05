@@ -2,6 +2,8 @@
 // 우리 사이트 파일은 새 버전을 먼저 받아 오므로 보통은 CACHE_VERSION을 올릴 필요가 없다.
 // 게임 저장 기록(브라우저 저장소)은 건드리지 않는다.
 const CACHE_VERSION = 'hand-free-game-v1';
+// 같은 주소(gmlduqzhd123-lab.github.io)의 다른 앱들과 저장소를 함께 쓰므로, 이 앱의 이전 캐시만 지운다.
+const CACHE_PREFIX = 'hand-free-game-v';
 const APP_SHELL = [
     './',
     './index.html',
@@ -21,7 +23,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys()
-            .then(keys => Promise.all(keys.filter(key => key !== CACHE_VERSION).map(key => caches.delete(key))))
+            .then(keys => Promise.all(keys.filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION).map(key => caches.delete(key))))
             .then(() => self.clients.claim())
     );
 });
