@@ -9,6 +9,8 @@ const APP_SHELL = [
     './index.html',
     './manifest.webmanifest',
     './ys-install.js',
+    './ys-qr.js',
+    './qr.svg',
     './icon.svg',
     './icons/icon-192.png',
     './icons/icon-512.png',
