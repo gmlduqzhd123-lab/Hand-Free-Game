@@ -1598,16 +1598,47 @@ def main():
                 assert "초기화" in page.locator("#prestige-dialog-content").inner_text()
                 page.locator("#btn-prestige-close").click()
 
-                # Stage 3 PWA: Service worker registration & cache verification
+                # Stage 3 PWA: Service worker registration, cache update preservation, and first offline execution
                 sw_info = page.evaluate("""async () => {
                     if (!('serviceWorker' in navigator) || !('caches' in window)) return {supported: false};
+                    await caches.open('other-app-cache-v1');
+                    localStorage.setItem('TeacherRPG_Save_v4_backup', '{"v":4}');
                     const reg = await navigator.serviceWorker.ready;
                     const keys = await caches.keys();
-                    return {supported: true, active: Boolean(reg && reg.active), keys};
+                    const cache = await caches.open('hand-free-game-v2');
+                    const cachedReqs = await cache.keys();
+                    return {
+                        supported: true,
+                        active: Boolean(reg && reg.active),
+                        keys,
+                        cachedCount: cachedReqs.length,
+                        siblingCachePreserved: keys.includes('other-app-cache-v1'),
+                        v4BackupPreserved: localStorage.getItem('TeacherRPG_Save_v4_backup') === '{"v":4}'
+                    };
                 }""")
                 assert sw_info["supported"] and sw_info["active"]
                 assert "hand-free-game-v2" in sw_info["keys"]
-                return {"v5FeaturesVerified": True, "recordCardDownload": dl_info.value.suggested_filename, "swCache": sw_info["keys"]}
+                assert sw_info["siblingCachePreserved"] is True
+                assert sw_info["v4BackupPreserved"] is True
+                assert sw_info["cachedCount"] >= 30
+
+                # Verify offline reload works from Service Worker cache without network
+                context.set_offline(True)
+                try:
+                    page.reload(wait_until="domcontentloaded")
+                    page.wait_for_function("typeof GameApp !== 'undefined' && GameApp.booted && Data.canWrite", timeout=10000)
+                    start_game(page)
+                    assert page.evaluate("GameApp.playing && Data.state.version === 5") is True
+                finally:
+                    context.set_offline(False)
+
+                return {
+                    "v5FeaturesVerified": True,
+                    "recordCardDownload": dl_info.value.suggested_filename,
+                    "swCache": sw_info["keys"],
+                    "cachedAssets": sw_info["cachedCount"],
+                    "offlineReloadVerified": True
+                }
 
         for name, function in [
             ("expanded collections show 24 items, 20 relics, 30 achievements and stable purchase DOM", collections_and_stable_shop),

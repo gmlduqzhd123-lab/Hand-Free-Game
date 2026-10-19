@@ -435,3 +435,76 @@ test('FR08, FR09, FR10: Ach.claimAll atomic payout, settleAway 24h cap & no doub
     assert.equal(h.Data.state.adventure.runId, 'run-2');
     assert.deepEqual(plain(h.Data.state.trackedGoals), [0, 1, 2], 'tracked goals persist across prestige');
 });
+
+test('Stage 3 Final Verification: 24h away settlement performance benchmark, 256KiB export bound, and PWA subpath assets', async () => {
+    const h = createHarness();
+    await h.Data.ready;
+    h.Data.state.hasStarted = true;
+    h.Data.state.stat.a.l = 12;
+    h.Data.state.stat.a.p = 95;
+    h.Data.state.comp.na.l = 5;
+    h.Data.state.comp.na.p = 75;
+    h.Data.state.lastActiveAt = NOW;
+    h.Data.save();
+
+    const baseState = JSON.parse(JSON.stringify(h.Data.state));
+    const endAt = NOW + 24 * 3600 * 1000;
+
+    // Warm up JIT once before timing
+    h.Simulation.simulate(JSON.parse(JSON.stringify(baseState)), NOW, endAt, { offline: true });
+
+    const t0 = performance.now();
+    const baseExpected = JSON.parse(JSON.stringify(baseState));
+    h.Simulation.simulate(baseExpected, NOW, endAt, { offline: true });
+    const baselineMs = Math.max(1, performance.now() - t0);
+
+    h.Data.state = JSON.parse(JSON.stringify(baseState));
+    h.Data.save();
+    h.setNow(endAt);
+    const t1 = performance.now();
+    const settled = h.Progression.settleAway(endAt, { notify: false, render: false });
+    const v5Ms = Math.max(1, performance.now() - t1);
+
+    assert.equal(settled.settled, true);
+    assert.equal(h.Data.state.gold, baseExpected.gold, '24h settleAway matches baseline gold');
+    assert.equal(h.Data.state.kills, baseExpected.kills, '24h settleAway matches baseline kills');
+    assert.deepEqual(plain(h.Data.state.player), plain(baseExpected.player), '24h settleAway matches baseline player level/xp');
+    assert.ok(v5Ms <= Math.max(baselineMs * 2, baselineMs + 80) && v5Ms < 1500,
+        `24h settleAway (${v5Ms.toFixed(1)}ms) must remain within 2x of baseline (${baselineMs.toFixed(1)}ms)`);
+
+    // Populate maximum 10 away reports and check exported payload size <= 256KiB
+    for (let i = 0; i < 12; i++) {
+        const stepStart = endAt + i * 120_000;
+        const stepEnd = stepStart + 90_000;
+        h.Data.state.lastActiveAt = stepStart;
+        h.setNow(stepEnd);
+        h.Progression.settleAway(stepEnd, { notify: false, render: false });
+    }
+    assert.equal(h.Data.state.recentReports.length, 10, 'recentReports capped at 10 entries');
+    const serializedJson = JSON.stringify(h.Data.state);
+    const encodedBackup = Buffer.from(encodeURIComponent(serializedJson), 'utf8').toString('base64');
+    assert.ok(Buffer.byteLength(serializedJson, 'utf8') <= 256 * 1024, 'JSON save stays well under 256KiB');
+    assert.ok(Buffer.byteLength(encodedBackup, 'utf8') <= 256 * 1024, 'Base64 export stays well under 256KiB');
+
+    // Verify manifest.webmanifest and sw.js APP_SHELL for /Hand-Free-Game/ subpath & offline readiness
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.webmanifest'), 'utf8'));
+    assert.equal(manifest.id, '/Hand-Free-Game/');
+    assert.equal(manifest.start_url, './');
+    assert.equal(manifest.scope, './');
+
+    const swSource = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+    const match = swSource.match(/const APP_SHELL\s*=\s*(\[[\s\S]*?\]);/);
+    assert.ok(match, 'sw.js must define APP_SHELL');
+    const appShell = vm.runInNewContext(match[1]);
+    for (const reqScript of ['./adventure.js', './progression.js', './automation.js', './experience-ui.js', './save.js', './game.js', './app.js']) {
+        assert.ok(appShell.includes(reqScript), `sw.js APP_SHELL must include ${reqScript}`);
+    }
+    for (const relPath of appShell) {
+        assert.ok(relPath.startsWith('./'), `APP_SHELL entry must be relative for subpath deployment: ${relPath}`);
+        if (relPath !== './') {
+            const diskPath = path.join(ROOT, relPath.slice(2));
+            assert.ok(fs.existsSync(diskPath), `APP_SHELL asset must exist on disk: ${relPath}`);
+        }
+    }
+});
+
