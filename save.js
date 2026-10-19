@@ -1,6 +1,6 @@
 'use strict';
 
-/* Save version 4 keeps the existing storage key and migrates older backups. */
+/* Save version 5 keeps the existing storage key and migrates older backups (v1-v4). */
 const GameLimits = Object.freeze({
     MAX_NUMBER: 1e100,
     MAX_LEVEL: 1000,
@@ -13,6 +13,41 @@ const GameLimits = Object.freeze({
         'reading-lamp', 'wisdom-book', 'note-bag', 'learning-badge',
         'coin-pouch', 'honey-lunchbox', 'treasure-map', 'lucky-plant',
         'star-glasses', 'praise-ribbon', 'sand-timer', 'calm-tea'
+    ]),
+    LOCATION_IDS: Object.freeze(['classroom', 'library', 'science', 'gym', 'gate']),
+    BOSS_CHECKPOINTS: Object.freeze([100, 200, 300, 400]),
+    LEGACY_COMPANION_IDS: Object.freeze(['na', 'yu']),
+    EXTRA_COMPANION_IDS: Object.freeze(['library', 'science', 'music', 'tidy']),
+    COMPANION_IDS: Object.freeze(['na', 'yu', 'library', 'science', 'music', 'tidy']),
+    EXTRA_COMPANION_MAX_LEVELS: Object.freeze({ library: 25, science: 25, music: 20, tidy: 25 }),
+    EXTRA_COMPANION_BASE_COSTS: Object.freeze({ library: 5000, science: 8000, music: 10000, tidy: 12000 }),
+    COSMETIC_SLOTS: Object.freeze(['outfit', 'accessory', 'wand', 'background', 'decor']),
+    COSMETIC_DEFAULTS: Object.freeze({
+        outfit: 'outfit-default',
+        accessory: 'accessory-none',
+        wand: 'wand-default',
+        background: 'bg-default',
+        decor: 'decor-none'
+    }),
+    COSMETIC_IDS: Object.freeze({
+        outfit: Object.freeze(['outfit-default', 'outfit-vest', 'outfit-cape']),
+        accessory: Object.freeze(['accessory-none', 'accessory-mug', 'accessory-notebook']),
+        wand: Object.freeze(['wand-default', 'wand-star', 'wand-rainbow']),
+        background: Object.freeze(['bg-default', 'bg-sunset', 'bg-festival']),
+        decor: Object.freeze(['decor-none', 'decor-plant', 'decor-trophy'])
+    }),
+    AUTOMATION_STRATEGIES: Object.freeze(['hold', 'auto-priority', 'balanced']),
+    SKILL_MODES: Object.freeze(['manual', 'ready', 'boss']),
+    PURCHASE_QUANTITIES: Object.freeze(['1', '10', 'max']),
+    PLAY_STYLES: Object.freeze(['idle', 'active']),
+    BOSS_ENTRY_MODES: Object.freeze(['auto', 'prepare']),
+    BOSS_STATES: Object.freeze(['none', 'pending', 'active']),
+    MAX_TRACKED_GOALS: 3,
+    MAX_RECENT_REPORTS: 10,
+    MAX_ACHIEVEMENT_ID: 29,
+    STORY_IDS: Object.freeze([
+        'enter-classroom', 'clear-100', 'enter-library', 'clear-200', 'enter-science',
+        'clear-300', 'enter-gym', 'clear-400', 'enter-gate'
     ]),
     XP_PER_SECOND: 5,
     xpForLevel(level) { return 20 + (Math.max(1, Math.min(this.MAX_LEVEL, Math.floor(level))) - 1) * 10; },
@@ -29,13 +64,29 @@ const GameLimits = Object.freeze({
     }
 });
 
+const AUTOMATION_TARGET_SET = new Set([
+    'click', 'auto', 'crit', 'comp1', 'comp2',
+    ...GameLimits.EXTRA_COMPANION_IDS.map(id => `comp:${id}`),
+    ...GameLimits.ITEM_IDS.map(id => `item:${id}`)
+]);
+
+const V3_REQUIRED_FIELDS = Object.freeze([
+    'version', 'min', 'gold', 'gem', 'token', 'kills', 'totalClicks', 'bossKills',
+    'mob', 'stat', 'comp', 'relic', 'ach', 'achReady', 'skill', 'buff',
+    'autoRemainder', 'lastActiveAt', 'savedAt', 'revision', 'sound'
+]);
+
+const V4_REQUIRED_FIELDS = Object.freeze([
+    ...V3_REQUIRED_FIELDS, 'player', 'xpRemainder'
+]);
+
 class SaveValidationError extends Error {
     constructor(message) { super(message); this.name = 'SaveValidationError'; }
 }
 
 const Data = {
     key: 'ys_bugfree_final_v2',
-    version: 4,
+    version: 5,
     state: null,
     def: null,
     canWrite: false,
@@ -58,7 +109,7 @@ const Data = {
 
     createDefault() {
         return {
-            version: 4,
+            version: 5,
             min: 0, gold: 0, gem: 0, token: 0, kills: 0, totalClicks: 0, bossKills: 0,
             mob: { hp: 100, boss: false, deadline: 0 },
             stat: {
@@ -81,8 +132,148 @@ const Data = {
             xpRemainder: 0,
             xpBonusRemainder: 0,
             lastActiveAt: Date.now(), savedAt: 0, revision: 0, sound: true,
-            character: 'female', hasStarted: false
+            character: 'female', hasStarted: false,
+            onboarding: {
+                version: 1,
+                step: 0,
+                steps: { observeAuto: false, firstUpgrade: false, useRush: false, viewAch: false },
+                completed: false,
+                skipped: false
+            },
+            preferences: {
+                playStyle: 'idle',
+                purchaseQty: '1',
+                showGoals: true
+            },
+            automation: {
+                enabled: false,
+                strategy: 'auto-priority',
+                targets: ['auto', 'comp1', 'item:fairy-clock'],
+                cursor: 0,
+                budgetLimit: 0,
+                budgetSpent: 0,
+                reserveGold: 0,
+                allowDuringBossPending: false,
+                skills: { rush: 'manual', night: 'manual' },
+                lastDecisionAt: 0
+            },
+            adventure: {
+                runId: 'run-1',
+                currentLocation: 'classroom',
+                clearedBossCheckpoints: [],
+                unlockedLocations: ['classroom'],
+                seenStories: ['enter-classroom']
+            },
+            bossControl: {
+                entryMode: 'auto',
+                status: 'none',
+                challengeId: 0,
+                startedAt: 0,
+                startAutoDamage: 0,
+                skillsUsed: { rush: false, night: false },
+                lastResult: null
+            },
+            extraCompanions: {
+                library: { unlocked: false, l: 0, p: 0, c: 5000 },
+                science: { unlocked: false, l: 0, p: 0, c: 8000 },
+                music: { unlocked: false, l: 0, p: 0, c: 10000 },
+                tidy: { unlocked: false, l: 0, p: 0, c: 12000 }
+            },
+            companionLoadout: ['na', 'yu'],
+            companionPresets: [
+                { name: '성장 조합', slots: ['na', 'yu'] },
+                { name: '수집 조합', slots: ['na', 'yu'] },
+                { name: '보스 조합', slots: ['na', 'yu'] }
+            ],
+            cosmetics: {
+                unlocked: {
+                    outfit: ['outfit-default'],
+                    accessory: ['accessory-none'],
+                    wand: ['wand-default'],
+                    background: ['bg-default'],
+                    decor: ['decor-none']
+                },
+                equipped: {
+                    outfit: 'outfit-default',
+                    accessory: 'accessory-none',
+                    wand: 'wand-default',
+                    background: 'bg-default',
+                    decor: 'decor-none'
+                }
+            },
+            trackedGoals: [],
+            skillTimers: { rushReadyAt: 0, nightReadyAt: 0 },
+            recentReports: []
         };
+    },
+
+    _syncDerivedUnlocks(state, isLegacyMigration = false) {
+        if (isLegacyMigration) {
+            for (const checkpoint of GameLimits.BOSS_CHECKPOINTS) {
+                if (state.kills >= checkpoint + 1 && !state.adventure.clearedBossCheckpoints.includes(checkpoint)) {
+                    state.adventure.clearedBossCheckpoints.push(checkpoint);
+                }
+            }
+        }
+        state.adventure.clearedBossCheckpoints.sort((a, b) => a - b);
+        const checkpointToLocation = { 100: 'library', 200: 'science', 300: 'gym', 400: 'gate' };
+        const checkpointToCompanion = { 100: 'library', 200: 'science', 300: 'music', 400: 'tidy' };
+        if (!state.adventure.unlockedLocations.includes('classroom')) {
+            state.adventure.unlockedLocations.unshift('classroom');
+        }
+        for (const checkpoint of state.adventure.clearedBossCheckpoints) {
+            const loc = checkpointToLocation[checkpoint];
+            if (loc && !state.adventure.unlockedLocations.includes(loc)) {
+                state.adventure.unlockedLocations.push(loc);
+            }
+            const clearStory = `clear-${checkpoint}`;
+            const enterStory = `enter-${loc}`;
+            if (!state.adventure.seenStories.includes(clearStory)) state.adventure.seenStories.push(clearStory);
+            if (loc && !state.adventure.seenStories.includes(enterStory)) state.adventure.seenStories.push(enterStory);
+        }
+        let highestLoc = 'classroom';
+        for (const checkpoint of GameLimits.BOSS_CHECKPOINTS) {
+            if (state.adventure.clearedBossCheckpoints.includes(checkpoint)) {
+                highestLoc = checkpointToLocation[checkpoint];
+            }
+        }
+        state.adventure.currentLocation = highestLoc;
+
+        for (const [checkpoint, loc] of Object.entries(checkpointToLocation)) {
+            if (state.adventure.unlockedLocations.includes(loc)) {
+                const compId = checkpointToCompanion[checkpoint];
+                if (compId && state.extraCompanions[compId]) {
+                    state.extraCompanions[compId].unlocked = true;
+                }
+            }
+        }
+
+        const unlockCosmetic = (slot, id) => {
+            if (!state.cosmetics.unlocked[slot].includes(id)) {
+                state.cosmetics.unlocked[slot].push(id);
+            }
+        };
+        const anyAchReady = state.achReady.some(Boolean) || state.extraAchReady.some(Boolean);
+        if (anyAchReady) {
+            unlockCosmetic('wand', 'wand-star');
+            unlockCosmetic('decor', 'decor-plant');
+        }
+        if (state.adventure.unlockedLocations.includes('library')) {
+            unlockCosmetic('outfit', 'outfit-vest');
+            unlockCosmetic('accessory', 'accessory-mug');
+        }
+        if (state.adventure.unlockedLocations.includes('science')) {
+            unlockCosmetic('accessory', 'accessory-notebook');
+            unlockCosmetic('background', 'bg-sunset');
+        }
+        if (state.adventure.unlockedLocations.includes('gym')) {
+            unlockCosmetic('wand', 'wand-rainbow');
+        }
+        if (state.adventure.unlockedLocations.includes('gate')) {
+            unlockCosmetic('outfit', 'outfit-cape');
+            unlockCosmetic('background', 'bg-festival');
+            unlockCosmetic('decor', 'decor-trophy');
+        }
     },
 
     normalize(raw, options = {}) {
@@ -106,23 +297,27 @@ const Data = {
             if (typeof value !== 'boolean') throw new SaveValidationError(`${field}는 참/거짓 값이어야 합니다.`);
             return value;
         };
+        const string = (value, field, maxLength = 64, allowEmpty = false) => {
+            if (typeof value !== 'string' || (!allowEmpty && value.trim().length === 0) || value.length > maxLength) {
+                throw new SaveValidationError(`${field}의 문자열 형식이 올바르지 않습니다.`);
+            }
+            return value;
+        };
         object(raw, '저장 데이터');
         if (!['gold', 'kills', 'stat', 'comp', 'mob', 'totalClicks', 'min', 'gem', 'token']
             .some(field => own(raw, field))) {
             throw new SaveValidationError('게임 저장 데이터가 아닙니다.');
         }
-        if (own(raw, 'version') && ![1, 2, 3, 4].includes(raw.version)) {
+        if (own(raw, 'version') && ![1, 2, 3, 4, 5].includes(raw.version)) {
             throw new SaveValidationError('지원하지 않는 저장 버전입니다.');
         }
         const state = this.createDefault();
-        if (raw.version === 3 || raw.version === 4) {
-            for (const field of Object.keys(state)) {
-                // Optional presentation and collection fields keep existing v3/v4 saves valid.
-                if (['character', 'hasStarted', 'items', 'extraRelics', 'extraAch', 'extraAchReady', 'xpBonusRemainder'].includes(field)) continue;
-                if (raw.version === 3 && ['player', 'xpRemainder'].includes(field)) continue;
+        if (raw.version === 3 || raw.version === 4 || raw.version === 5) {
+            const required = raw.version === 3 ? V3_REQUIRED_FIELDS : V4_REQUIRED_FIELDS;
+            for (const field of required) {
                 if (!own(raw, field)) throw new SaveValidationError(`${field}의 저장 정보가 누락되었습니다.`);
             }
-            if (raw.version === 4) {
+            if (raw.version >= 4) {
                 const player = object(raw.player, 'player');
                 for (const name of ['level', 'xp']) {
                     if (!own(player, name)) throw new SaveValidationError(`player.${name}의 저장 정보가 누락되었습니다.`);
@@ -157,7 +352,7 @@ const Data = {
                 if (!own(group, name)) continue;
                 const item = object(group[name], `${field}.${name}`);
                 if (!['l', 'p', 'c'].some(part => own(item, part)) ||
-                    ((strict || raw.version === 3 || raw.version === 4) && !['l', 'p', 'c'].every(part => own(item, part)))) {
+                    ((strict || raw.version >= 3) && !['l', 'p', 'c'].every(part => own(item, part)))) {
                     throw new SaveValidationError(`${field}.${name}의 강화 정보가 불완전합니다.`);
                 }
                 for (const part of ['l', 'p', 'c']) {
@@ -168,8 +363,6 @@ const Data = {
                 }
             }
         }
-        // Existing players who never bought automatic work receive the same free
-        // starter as a new game. Their gold and original upgrade cost are retained.
         if (state.stat.a.l === 0 && state.stat.a.p === 0) {
             state.stat.a.l = 1;
             state.stat.a.p = 10;
@@ -191,7 +384,6 @@ const Data = {
                     throw new SaveValidationError(`알 수 없는 아이템 ID입니다: ${id}`);
                 }
                 const level = number(items[id], `items.${id}`, GameLimits.MAX_ITEM_LEVEL, true);
-                // Collection levels never silently clamp, including when loading a saved file.
                 if (items[id] > GameLimits.MAX_ITEM_LEVEL) {
                     throw new SaveValidationError(`items.${id}의 레벨은 25 이하여야 합니다.`);
                 }
@@ -216,7 +408,6 @@ const Data = {
             state.lastActiveAt = number(raw.lastDt, 'lastDt', maxTimestamp, true);
         }
         if (own(raw, 'sound')) state.sound = boolean(raw.sound, 'sound');
-        // Older saves already represent a played game and retain away rewards.
         state.hasStarted = own(raw, 'hasStarted') ? boolean(raw.hasStarted, 'hasStarted') : true;
         if (own(raw, 'character')) {
             if (!['female', 'male'].includes(raw.character)) {
@@ -259,21 +450,304 @@ const Data = {
             if (own(mob, 'deadline')) state.mob.deadline = number(mob.deadline, 'mob.deadline', maxTimestamp, true);
             else if (state.mob.boss) state.mob.deadline = state.lastActiveAt + (state.relic[3] ? 40000 : 30000);
         }
-        // A clock rollback moves every absolute timer together. The latest known
-        // clock anchors the offset; a played memory-only backup may have no savedAt.
-        const now = Date.now();
-        const legacyClock = !own(raw, 'version') || raw.version < 3;
-        const clockAnchor = Math.max(state.savedAt, legacyClock || state.hasStarted ? state.lastActiveAt : 0);
-        const rollback = Math.max(0, clockAnchor - now);
-        if (rollback > 0) {
-            const shift = value => value > 0 ? Math.max(0, value - rollback) : 0;
-            state.lastActiveAt = shift(state.lastActiveAt);
-            state.savedAt = shift(state.savedAt);
-            for (const field of ['rush', 'night']) state.skill[field] = shift(state.skill[field]);
-            for (const field of ['rushUntil', 'nightUntil']) state.buff[field] = shift(state.buff[field]);
-            state.mob.deadline = shift(state.mob.deadline);
+
+        // Validate v5 fields if present
+        if (own(raw, 'onboarding')) {
+            const ob = object(raw.onboarding, 'onboarding');
+            if (own(ob, 'version')) state.onboarding.version = number(ob.version, 'onboarding.version', 100, true);
+            if (own(ob, 'step')) state.onboarding.step = number(ob.step, 'onboarding.step', 10, true);
+            if (own(ob, 'completed')) state.onboarding.completed = boolean(ob.completed, 'onboarding.completed');
+            if (own(ob, 'skipped')) state.onboarding.skipped = boolean(ob.skipped, 'onboarding.skipped');
+            if (own(ob, 'steps')) {
+                const steps = object(ob.steps, 'onboarding.steps');
+                for (const key of ['observeAuto', 'firstUpgrade', 'useRush', 'viewAch']) {
+                    if (own(steps, key)) state.onboarding.steps[key] = boolean(steps[key], `onboarding.steps.${key}`);
+                }
+            }
+        } else if (state.hasStarted) {
+            // Existing started saves from v1-v4 do not force onboarding on load.
+            state.onboarding.completed = true;
         }
-        state.lastActiveAt = Math.min(now, state.lastActiveAt);
+
+        if (own(raw, 'preferences')) {
+            const pref = object(raw.preferences, 'preferences');
+            if (own(pref, 'playStyle')) {
+                if (!GameLimits.PLAY_STYLES.includes(pref.playStyle)) {
+                    throw new SaveValidationError('선호 플레이 스타일이 올바르지 않습니다.');
+                }
+                state.preferences.playStyle = pref.playStyle;
+            }
+            if (own(pref, 'purchaseQty')) {
+                if (!GameLimits.PURCHASE_QUANTITIES.includes(pref.purchaseQty)) {
+                    throw new SaveValidationError('구매 수량 설정이 올바르지 않습니다.');
+                }
+                state.preferences.purchaseQty = pref.purchaseQty;
+            }
+            if (own(pref, 'showGoals')) state.preferences.showGoals = boolean(pref.showGoals, 'preferences.showGoals');
+        }
+
+        if (own(raw, 'automation')) {
+            const auto = object(raw.automation, 'automation');
+            if (own(auto, 'enabled')) state.automation.enabled = boolean(auto.enabled, 'automation.enabled');
+            if (own(auto, 'strategy')) {
+                if (!GameLimits.AUTOMATION_STRATEGIES.includes(auto.strategy)) {
+                    throw new SaveValidationError('자동 강화 전략이 올바르지 않습니다.');
+                }
+                state.automation.strategy = auto.strategy;
+            }
+            if (own(auto, 'targets')) {
+                if (!Array.isArray(auto.targets) || auto.targets.length > 40) {
+                    throw new SaveValidationError('자동 구매 대상 목록이 올바르지 않습니다.');
+                }
+                const seen = new Set();
+                for (const target of auto.targets) {
+                    if (typeof target !== 'string' || !AUTOMATION_TARGET_SET.has(target) || seen.has(target)) {
+                        throw new SaveValidationError(`유효하지 않거나 중복된 자동 구매 대상입니다: ${target}`);
+                    }
+                    seen.add(target);
+                }
+                state.automation.targets = Array.from(seen);
+            }
+            if (own(auto, 'cursor')) state.automation.cursor = number(auto.cursor, 'automation.cursor', GameLimits.MAX_COUNTER, true);
+            if (own(auto, 'budgetLimit')) state.automation.budgetLimit = number(auto.budgetLimit, 'automation.budgetLimit');
+            if (own(auto, 'budgetSpent')) state.automation.budgetSpent = number(auto.budgetSpent, 'automation.budgetSpent');
+            if (own(auto, 'reserveGold')) state.automation.reserveGold = number(auto.reserveGold, 'automation.reserveGold');
+            if (own(auto, 'allowDuringBossPending')) {
+                state.automation.allowDuringBossPending = boolean(auto.allowDuringBossPending, 'automation.allowDuringBossPending');
+            }
+            if (own(auto, 'skills')) {
+                const sk = object(auto.skills, 'automation.skills');
+                for (const name of ['rush', 'night']) {
+                    if (own(sk, name)) {
+                        if (!GameLimits.SKILL_MODES.includes(sk[name])) {
+                            throw new SaveValidationError(`자동 스킬 설정이 올바르지 않습니다: ${name}`);
+                        }
+                        state.automation.skills[name] = sk[name];
+                    }
+                }
+            }
+            if (own(auto, 'lastDecisionAt')) {
+                state.automation.lastDecisionAt = number(auto.lastDecisionAt, 'automation.lastDecisionAt', maxTimestamp, true);
+            }
+        }
+
+        if (own(raw, 'adventure')) {
+            const adv = object(raw.adventure, 'adventure');
+            if (own(adv, 'runId')) state.adventure.runId = string(adv.runId, 'adventure.runId', 64);
+            if (own(adv, 'currentLocation')) {
+                if (!GameLimits.LOCATION_IDS.includes(adv.currentLocation)) {
+                    throw new SaveValidationError('현재 장소 ID가 올바르지 않습니다.');
+                }
+                state.adventure.currentLocation = adv.currentLocation;
+            }
+            if (own(adv, 'clearedBossCheckpoints')) {
+                if (!Array.isArray(adv.clearedBossCheckpoints) || adv.clearedBossCheckpoints.length > 4) {
+                    throw new SaveValidationError('보스 격파 구간 배열이 올바르지 않습니다.');
+                }
+                const seen = new Set();
+                for (const cp of adv.clearedBossCheckpoints) {
+                    if (!GameLimits.BOSS_CHECKPOINTS.includes(cp) || seen.has(cp)) {
+                        throw new SaveValidationError('보스 격파 구간 값이 올바르지 않습니다.');
+                    }
+                    seen.add(cp);
+                }
+                state.adventure.clearedBossCheckpoints = Array.from(seen).sort((a, b) => a - b);
+            }
+            if (own(adv, 'unlockedLocations')) {
+                if (!Array.isArray(adv.unlockedLocations) || adv.unlockedLocations.length === 0 || adv.unlockedLocations.length > 5) {
+                    throw new SaveValidationError('해금 장소 목록이 올바르지 않습니다.');
+                }
+                const seen = new Set();
+                for (const loc of adv.unlockedLocations) {
+                    if (!GameLimits.LOCATION_IDS.includes(loc) || seen.has(loc)) {
+                        throw new SaveValidationError(`알 수 없거나 중복된 장소 ID입니다: ${loc}`);
+                    }
+                    seen.add(loc);
+                }
+                if (!seen.has('classroom')) throw new SaveValidationError('기본 교실 장소는 항상 해금되어 있어야 합니다.');
+                state.adventure.unlockedLocations = Array.from(seen);
+            }
+            if (own(adv, 'seenStories')) {
+                if (!Array.isArray(adv.seenStories) || adv.seenStories.length > 20) {
+                    throw new SaveValidationError('이야기 기록 배열이 올바르지 않습니다.');
+                }
+                const seen = new Set();
+                for (const storyId of adv.seenStories) {
+                    if (typeof storyId !== 'string' || !GameLimits.STORY_IDS.includes(storyId) || seen.has(storyId)) {
+                        throw new SaveValidationError(`알 수 없거나 중복된 이야기 ID입니다: ${storyId}`);
+                    }
+                    seen.add(storyId);
+                }
+                state.adventure.seenStories = Array.from(seen);
+            }
+        }
+
+        if (own(raw, 'bossControl')) {
+            const bc = object(raw.bossControl, 'bossControl');
+            if (own(bc, 'entryMode')) {
+                if (!GameLimits.BOSS_ENTRY_MODES.includes(bc.entryMode)) {
+                    throw new SaveValidationError('보스 진입 방식이 올바르지 않습니다.');
+                }
+                state.bossControl.entryMode = bc.entryMode;
+            }
+            if (own(bc, 'status')) {
+                if (!GameLimits.BOSS_STATES.includes(bc.status)) {
+                    throw new SaveValidationError('보스 도전 상태가 올바르지 않습니다.');
+                }
+                state.bossControl.status = bc.status;
+            }
+            if (own(bc, 'challengeId')) state.bossControl.challengeId = number(bc.challengeId, 'bossControl.challengeId', GameLimits.MAX_COUNTER, true);
+            if (own(bc, 'startedAt')) state.bossControl.startedAt = number(bc.startedAt, 'bossControl.startedAt', maxTimestamp, true);
+            if (own(bc, 'startAutoDamage')) state.bossControl.startAutoDamage = number(bc.startAutoDamage, 'bossControl.startAutoDamage');
+            if (own(bc, 'skillsUsed')) {
+                const su = object(bc.skillsUsed, 'bossControl.skillsUsed');
+                for (const name of ['rush', 'night']) {
+                    if (own(su, name)) state.bossControl.skillsUsed[name] = boolean(su[name], `bossControl.skillsUsed.${name}`);
+                }
+            }
+            if (own(bc, 'lastResult') && bc.lastResult !== null) {
+                const lr = object(bc.lastResult, 'bossControl.lastResult');
+                if (!['failed', 'victory', 'expired', 'cleared'].includes(lr.outcome)) {
+                    throw new SaveValidationError('보스 직전 결과 상태가 올바르지 않습니다.');
+                }
+                const normalizedOutcome = lr.outcome === 'expired' ? 'failed' : lr.outcome === 'cleared' ? 'victory' : lr.outcome;
+                const lrSkills = own(lr, 'skillsUsed') ? object(lr.skillsUsed, 'bossControl.lastResult.skillsUsed') : { rush: false, night: false };
+                const cpVal = own(lr, 'checkpoint')
+                    ? number(lr.checkpoint, 'bossControl.lastResult.checkpoint', GameLimits.MAX_COUNTER, true)
+                    : (own(lr, 'stage') ? number(lr.stage, 'bossControl.lastResult.stage', GameLimits.MAX_COUNTER, true) : 100);
+                state.bossControl.lastResult = {
+                    outcome: normalizedOutcome,
+                    checkpoint: cpVal,
+                    maxHp: number(lr.maxHp, 'bossControl.lastResult.maxHp'),
+                    remainingHp: number(lr.remainingHp, 'bossControl.lastResult.remainingHp'),
+                    durationSec: number(lr.durationSec, 'bossControl.lastResult.durationSec', 10000),
+                    autoDamage: number(lr.autoDamage, 'bossControl.lastResult.autoDamage'),
+                    skillsUsed: {
+                        rush: own(lrSkills, 'rush') ? boolean(lrSkills.rush, 'bossControl.lastResult.skillsUsed.rush') : false,
+                        night: own(lrSkills, 'night') ? boolean(lrSkills.night, 'bossControl.lastResult.skillsUsed.night') : false
+                    },
+                    at: own(lr, 'at') ? number(Math.ceil(lr.at), 'bossControl.lastResult.at', maxTimestamp, true) : 0
+                };
+            }
+        }
+
+        if (own(raw, 'extraCompanions')) {
+            const ec = object(raw.extraCompanions, 'extraCompanions');
+            for (const id of Object.keys(ec)) {
+                if (!GameLimits.EXTRA_COMPANION_IDS.includes(id)) {
+                    throw new SaveValidationError(`알 수 없는 동료 ID입니다: ${id}`);
+                }
+                const entry = object(ec[id], `extraCompanions.${id}`);
+                const maxLevel = GameLimits.EXTRA_COMPANION_MAX_LEVELS[id];
+                const unlocked = own(entry, 'unlocked') ? boolean(entry.unlocked, `extraCompanions.${id}.unlocked`) : false;
+                const l = own(entry, 'l') ? number(entry.l, `extraCompanions.${id}.l`, maxLevel, true) : 0;
+                if (own(entry, 'l') && entry.l > maxLevel) {
+                    throw new SaveValidationError(`extraCompanions.${id}의 레벨 상한을 초과했습니다.`);
+                }
+                if (!unlocked && l > 0) {
+                    throw new SaveValidationError(`해금되지 않은 동료(${id})는 강화할 수 없습니다.`);
+                }
+                const p = own(entry, 'p') ? number(entry.p, `extraCompanions.${id}.p`) : 0;
+                const c = own(entry, 'c') ? number(entry.c, `extraCompanions.${id}.c`) : GameLimits.EXTRA_COMPANION_BASE_COSTS[id];
+                state.extraCompanions[id] = { unlocked, l, p, c };
+            }
+        }
+
+        if (own(raw, 'cosmetics')) {
+            const cos = object(raw.cosmetics, 'cosmetics');
+            if (own(cos, 'unlocked')) {
+                const un = object(cos.unlocked, 'cosmetics.unlocked');
+                for (const slot of Object.keys(un)) {
+                    if (!GameLimits.COSMETIC_SLOTS.includes(slot)) {
+                        throw new SaveValidationError(`알 수 없는 외형 슬롯입니다: ${slot}`);
+                    }
+                    const list = un[slot];
+                    if (!Array.isArray(list) || list.length === 0 || list.length > 10) {
+                        throw new SaveValidationError(`cosmetics.unlocked.${slot} 배열이 올바르지 않습니다.`);
+                    }
+                    const seen = new Set();
+                    for (const itemId of list) {
+                        if (!GameLimits.COSMETIC_IDS[slot].includes(itemId) || seen.has(itemId)) {
+                            throw new SaveValidationError(`유효하지 않거나 중복된 외형 ID입니다: ${itemId}`);
+                        }
+                        seen.add(itemId);
+                    }
+                    const defId = GameLimits.COSMETIC_DEFAULTS[slot];
+                    if (!seen.has(defId)) seen.add(defId);
+                    state.cosmetics.unlocked[slot] = Array.from(seen);
+                }
+            }
+            if (own(cos, 'equipped')) {
+                const eq = object(cos.equipped, 'cosmetics.equipped');
+                for (const slot of Object.keys(eq)) {
+                    if (!GameLimits.COSMETIC_SLOTS.includes(slot)) {
+                        throw new SaveValidationError(`알 수 없는 외형 슬롯입니다: ${slot}`);
+                    }
+                    const itemId = eq[slot];
+                    if (!GameLimits.COSMETIC_IDS[slot].includes(itemId)) {
+                        throw new SaveValidationError(`알 수 없는 외형 ID입니다: ${itemId}`);
+                    }
+                    state.cosmetics.equipped[slot] = itemId;
+                }
+            }
+        }
+
+        if (own(raw, 'trackedGoals')) {
+            if (!Array.isArray(raw.trackedGoals) || raw.trackedGoals.length > GameLimits.MAX_TRACKED_GOALS) {
+                throw new SaveValidationError('고정 목표 배열 길이가 올바르지 않습니다.');
+            }
+            const seen = new Set();
+            for (const id of raw.trackedGoals) {
+                const goalId = number(id, 'trackedGoals', GameLimits.MAX_ACHIEVEMENT_ID, true);
+                if (seen.has(goalId)) throw new SaveValidationError('중복된 고정 목표 ID입니다.');
+                seen.add(goalId);
+            }
+            state.trackedGoals = Array.from(seen);
+        }
+
+        if (own(raw, 'skillTimers')) {
+            const st = object(raw.skillTimers, 'skillTimers');
+            for (const field of ['rushReadyAt', 'nightReadyAt']) {
+                if (own(st, field)) state.skillTimers[field] = number(st[field], `skillTimers.${field}`, maxTimestamp, true);
+            }
+        }
+
+        if (own(raw, 'recentReports')) {
+            if (!Array.isArray(raw.recentReports) || raw.recentReports.length > GameLimits.MAX_RECENT_REPORTS) {
+                throw new SaveValidationError('최근 보고서 배열 길이가 올바르지 않습니다.');
+            }
+            state.recentReports = raw.recentReports.map((item, idx) => {
+                const rep = object(item, `recentReports[${idx}]`);
+                const createdAtVal = own(rep, 'createdAt') ? rep.createdAt : rep.at;
+                const rawElapsedVal = own(rep, 'rawElapsedMs') ? rep.rawElapsedMs : rep.awayMs;
+                const appliedElapsedVal = own(rep, 'appliedElapsedMs') ? rep.appliedElapsedMs : rep.settledMs;
+                const beforeLvVal = own(rep, 'beforeLevel') ? rep.beforeLevel : rep.levelBefore;
+                const afterLvVal = own(rep, 'afterLevel') ? rep.afterLevel : rep.levelAfter;
+                const locVal = own(rep, 'locationId') ? rep.locationId : rep.location;
+                const locationId = typeof locVal === 'string' && GameLimits.LOCATION_IDS.includes(locVal) ? locVal : 'classroom';
+                const charVal = own(rep, 'character') && ['female', 'male'].includes(rep.character) ? rep.character : state.character;
+                const headlineVal = own(rep, 'headline') && typeof rep.headline === 'string' ? rep.headline.slice(0, 120) : '';
+                return {
+                    id: string(rep.id, `recentReports[${idx}].id`, 64),
+                    createdAt: number(createdAtVal, `recentReports[${idx}].createdAt`, maxTimestamp, true),
+                    rawElapsedMs: number(rawElapsedVal, `recentReports[${idx}].rawElapsedMs`, maxTimestamp, true),
+                    appliedElapsedMs: number(appliedElapsedVal, `recentReports[${idx}].appliedElapsedMs`, 86400000, true),
+                    capped: boolean(rep.capped, `recentReports[${idx}].capped`),
+                    beforeLevel: number(beforeLvVal, `recentReports[${idx}].beforeLevel`, GameLimits.MAX_LEVEL, true),
+                    afterLevel: number(afterLvVal, `recentReports[${idx}].afterLevel`, GameLimits.MAX_LEVEL, true),
+                    xpGained: number(rep.xpGained, `recentReports[${idx}].xpGained`),
+                    goldGained: number(rep.goldGained, `recentReports[${idx}].goldGained`),
+                    gemsGained: number(rep.gemsGained, `recentReports[${idx}].gemsGained`),
+                    kills: number(rep.kills, `recentReports[${idx}].kills`, GameLimits.MAX_COUNTER, true),
+                    bossKills: number(rep.bossKills, `recentReports[${idx}].bossKills`, GameLimits.MAX_COUNTER, true),
+                    bossExpired: number(rep.bossExpired, `recentReports[${idx}].bossExpired`, GameLimits.MAX_COUNTER, true),
+                    character: charVal,
+                    locationId,
+                    headline: headlineVal
+                };
+            });
+        }
+
         // Legacy saves did not count defeated bosses. The first boss is alive at 100 kills.
         if (!own(raw, 'bossKills')) state.bossKills = Math.floor(Math.max(0, state.kills - 1) / 100);
         state.achReady = state.achReady.map((value, index) => value || state.ach[index]);
@@ -283,6 +757,106 @@ const Data = {
         if (state.totalClicks >= 500) state.achReady[2] = true;
         if (state.gold >= 1000000) state.achReady[3] = true;
         if (state.stat.c.l >= 50) state.achReady[4] = true;
+
+        const isLegacyMigration = !own(raw, 'version') || raw.version < 5 || !own(raw, 'adventure');
+        this._syncDerivedUnlocks(state, isLegacyMigration);
+
+        if (own(raw, 'companionLoadout')) {
+            if (!Array.isArray(raw.companionLoadout) || raw.companionLoadout.length === 0 || raw.companionLoadout.length > 2) {
+                throw new SaveValidationError('동행 동료 슬롯 구성이 올바르지 않습니다.');
+            }
+            const seen = new Set();
+            for (const id of raw.companionLoadout) {
+                if (!GameLimits.COMPANION_IDS.includes(id) || seen.has(id)) {
+                    throw new SaveValidationError(`유효하지 않거나 중복된 동료 ID입니다: ${id}`);
+                }
+                if (GameLimits.EXTRA_COMPANION_IDS.includes(id) && !state.extraCompanions[id].unlocked) {
+                    throw new SaveValidationError(`미보유 동료는 동행할 수 없습니다: ${id}`);
+                }
+                seen.add(id);
+            }
+            state.companionLoadout = Array.from(seen);
+        }
+
+        if (own(raw, 'companionPresets')) {
+            if (!Array.isArray(raw.companionPresets) || raw.companionPresets.length === 0 || raw.companionPresets.length > 3) {
+                throw new SaveValidationError('동료 프리셋 배열이 올바르지 않습니다.');
+            }
+            state.companionPresets = raw.companionPresets.map((preset, idx) => {
+                const p = object(preset, `companionPresets[${idx}]`);
+                const name = string(p.name, `companionPresets[${idx}].name`, 30);
+                if (!Array.isArray(p.slots) || p.slots.length === 0 || p.slots.length > 2) {
+                    throw new SaveValidationError(`companionPresets[${idx}].slots 배열이 올바르지 않습니다.`);
+                }
+                const seen = new Set();
+                for (const id of p.slots) {
+                    if (!GameLimits.COMPANION_IDS.includes(id) || seen.has(id)) {
+                        throw new SaveValidationError(`프리셋에 유효하지 않거나 중복된 동료가 있습니다: ${id}`);
+                    }
+                    seen.add(id);
+                }
+                return { name, slots: Array.from(seen) };
+            });
+        }
+
+        for (const slot of GameLimits.COSMETIC_SLOTS) {
+            const equippedId = state.cosmetics.equipped[slot];
+            if (!state.cosmetics.unlocked[slot].includes(equippedId)) {
+                throw new SaveValidationError(`보유하지 않은 외형은 장착할 수 없습니다: ${equippedId}`);
+            }
+        }
+
+        // Reconcile bossControl status with mob.boss
+        if (!state.mob.boss) {
+            if (strict && own(raw, 'bossControl') && raw.bossControl && raw.bossControl.status === 'pending') {
+                throw new SaveValidationError('일반 몬스터 상태에서 보스 대기 상태를 설정할 수 없습니다.');
+            }
+            state.bossControl.status = 'none';
+            state.mob.deadline = 0;
+        } else if (state.bossControl.status === 'pending') {
+            state.mob.deadline = 0;
+        } else {
+            state.bossControl.status = 'active';
+            if (!(state.mob.deadline > 0)) {
+                state.mob.deadline = state.lastActiveAt + (state.relic[3] ? 40000 : 30000);
+            }
+        }
+
+        // Populate skillTimers from skill timestamps when migrating or when skill was set directly
+        if (state.skill.rush === 0) state.skillTimers.rushReadyAt = 0;
+        else if (!(state.skillTimers.rushReadyAt >= state.skill.rush)) {
+            state.skillTimers.rushReadyAt = state.skill.rush + 60000;
+        }
+        if (state.skill.night === 0) state.skillTimers.nightReadyAt = 0;
+        else if (!(state.skillTimers.nightReadyAt >= state.skill.night)) {
+            state.skillTimers.nightReadyAt = state.skill.night + 90000;
+        }
+
+        // A clock rollback moves every absolute timer together.
+        const now = Date.now();
+        const legacyClock = !own(raw, 'version') || raw.version < 3;
+        const clockAnchor = Math.max(state.savedAt, legacyClock || state.hasStarted ? state.lastActiveAt : 0);
+        const rollback = Math.max(0, clockAnchor - now);
+        if (rollback > 0) {
+            const shift = value => value > 0 ? Math.max(0, value - rollback) : 0;
+            state.lastActiveAt = shift(state.lastActiveAt);
+            state.savedAt = shift(state.savedAt);
+            for (const field of ['rush', 'night']) state.skill[field] = shift(state.skill[field]);
+            for (const field of ['rushReadyAt', 'nightReadyAt']) state.skillTimers[field] = shift(state.skillTimers[field]);
+            for (const field of ['rushUntil', 'nightUntil']) state.buff[field] = shift(state.buff[field]);
+            state.mob.deadline = shift(state.mob.deadline);
+            state.bossControl.startedAt = shift(state.bossControl.startedAt);
+            if (state.bossControl.lastResult && state.bossControl.lastResult.at > 0) {
+                state.bossControl.lastResult.at = shift(state.bossControl.lastResult.at);
+            }
+            state.automation.lastDecisionAt = shift(state.automation.lastDecisionAt);
+            if (Array.isArray(state.recentReports)) {
+                for (const rep of state.recentReports) {
+                    rep.createdAt = shift(rep.createdAt);
+                }
+            }
+        }
+        state.lastActiveAt = Math.min(now, state.lastActiveAt);
         return state;
     },
 
@@ -297,7 +871,6 @@ const Data = {
 
     _preserve(raw) {
         this.recoveryRaw = raw;
-        // Preserve in memory even if quota or browser policy prevents a recovery copy.
         try {
             if (localStorage.getItem(`${this.key}:recovery`) === null) {
                 localStorage.setItem(`${this.key}:recovery`, raw);
@@ -305,13 +878,21 @@ const Data = {
         } catch (error) { /* The settings screen can still download recoveryRaw. */ }
     },
 
+    _preservePreV5Backup(raw, parsed) {
+        if (!parsed || typeof parsed !== 'object') return;
+        if (parsed.version === 5) return;
+        try {
+            if (localStorage.getItem(`${this.key}:v4-backup`) === null) {
+                localStorage.setItem(`${this.key}:v4-backup`, raw);
+            }
+        } catch (error) { /* Optional migration snapshot never blocks gameplay. */ }
+    },
+
     getRecovery() { return this.recoveryRaw; },
 
     load() {
         const result = this._read(this.key);
         if (!result.ok) {
-            // Permission can disappear between the initial read and ownership
-            // acquisition. Keep any progress we have already read successfully.
             if (!this.state) { this.state = this.createDefault(); this._revision = 0; }
             return this.state;
         }
@@ -322,9 +903,10 @@ const Data = {
             return this.state;
         }
         try {
-            this.state = this.normalize(JSON.parse(result.raw));
+            const parsed = JSON.parse(result.raw);
+            this.state = this.normalize(parsed);
+            this._preservePreV5Backup(result.raw, parsed);
             this._revision = this.state.revision;
-            // A repaired live save ends recovery mode; the historical recovery key remains.
             this.recoveryRaw = null;
         } catch (error) {
             this._preserve(result.raw);
@@ -379,8 +961,6 @@ const Data = {
         try { next = this.normalize(candidate === undefined ? this.state : candidate, { strict: true }); }
         catch (error) { this._announce('validation', error.message); return false; }
         if (this._mode === 'memory') {
-            // Without a lock or a lease no tab may touch the shared save, even
-            // when the main key is writable but the lease key is not.
             if (!options.allowMemory) return false;
             if (candidate !== undefined) this.state = next;
             this.storageAvailable = false;
@@ -390,7 +970,6 @@ const Data = {
         const storedRevision = this._storedRevision(Boolean(options.replaceRecovery));
         if (this.recoveryRaw !== null && !options.replaceRecovery) return false;
         if (storedRevision === null) {
-            // Never overwrite an unknown existing save when its revision cannot be read.
             if (options.allowMemory && candidate !== undefined) this.state = next;
             return Boolean(options.allowMemory);
         }
@@ -548,7 +1127,6 @@ const Data = {
         try {
             const result = this._read(`${this.key}:owner`);
             if (!result.ok) {
-                // With storage blocked there is no shared progress to overwrite.
                 this._mode = 'memory';
                 this._acquired();
                 return;
@@ -568,7 +1146,6 @@ const Data = {
                 this._acquired();
                 return;
             }
-            // The confirmation window resolves simultaneous startup contenders before gameplay.
             await new Promise(resolve => setTimeout(resolve, 150));
             if (this._closed) return;
             if (this._ownsLease()) this._acquired();
@@ -664,7 +1241,6 @@ const Data = {
                         else this._tryLease();
                     }
                     if (message.type === 'request-ownership' && this.canWrite) {
-                        // Explicit tab handoff saves before releasing the exclusive writer.
                         this._handleOwnershipRequest(message.owner);
                     }
                 };
@@ -687,7 +1263,6 @@ const Data = {
             }
         });
         if (!this._boundEvents) {
-            // Let the application flush the final combat interval before releasing ownership.
             window.addEventListener('pagehide', () => Promise.resolve().then(() => this.close()));
             window.addEventListener('pageshow', event => { if (event.persisted) this.resume(); });
             this._boundEvents = true;

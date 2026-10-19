@@ -1,12 +1,23 @@
 // 4시 40분의 용사 서비스 워커: 앱 설치(홈 화면에 추가)와 오프라인 열기를 돕는다.
 // 우리 사이트 파일은 새 버전을 먼저 받아 오므로 보통은 CACHE_VERSION을 올릴 필요가 없다.
 // 게임 저장 기록(브라우저 저장소)은 건드리지 않는다.
-const CACHE_VERSION = 'hand-free-game-v1';
+const CACHE_VERSION = 'hand-free-game-v2';
 // 같은 주소(gmlduqzhd123-lab.github.io)의 다른 앱들과 저장소를 함께 쓰므로, 이 앱의 이전 캐시만 지운다.
 const CACHE_PREFIX = 'hand-free-game-v';
 const APP_SHELL = [
     './',
     './index.html',
+    './styles.css',
+    './presentation.css',
+    './save.js',
+    './catalog.js',
+    './adventure.js',
+    './game.js',
+    './progression.js',
+    './automation.js',
+    './catalog-ui.js',
+    './experience-ui.js',
+    './app.js',
     './manifest.webmanifest',
     './ys-install.js',
     './ys-qr.js',
@@ -14,7 +25,20 @@ const APP_SHELL = [
     './icon.svg',
     './icons/icon-192.png',
     './icons/icon-512.png',
-    './icons/apple-touch-icon.png'
+    './icons/apple-touch-icon.png',
+    './assets/classroom.svg',
+    './assets/teacher.svg',
+    './assets/teacher-male.svg',
+    './assets/enemy-0.svg',
+    './assets/enemy-0-boss.svg',
+    './assets/enemy-1.svg',
+    './assets/enemy-1-boss.svg',
+    './assets/enemy-2.svg',
+    './assets/enemy-2-boss.svg',
+    './assets/enemy-3.svg',
+    './assets/enemy-3-boss.svg',
+    './assets/enemy-4.svg',
+    './assets/enemy-4-boss.svg'
 ];
 
 self.addEventListener('install', event => {

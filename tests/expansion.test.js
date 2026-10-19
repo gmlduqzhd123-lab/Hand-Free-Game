@@ -42,11 +42,11 @@ function harness({ raw, game = false, failure } = {}) {
         VFX: { add() {}, cvs: { width: 480, height: 200 } },
         $: () => ({ style: {}, classList: { add() {}, remove() {} } })
     });
-    for (const file of game ? ["save.js", "catalog.js", "game.js"] : ["save.js"]) {
+    for (const file of game ? ["save.js", "catalog.js", "adventure.js", "game.js", "progression.js", "automation.js"] : ["save.js"]) {
         vm.runInContext(fs.readFileSync(path.join(ROOT, file), "utf8"), context, { filename: file });
     }
     vm.runInContext(game
-        ? "globalThis.api = { Data, GameLimits, Catalog, Ach, Logic, Combat, Simulation };"
+        ? "globalThis.api = { Data, GameLimits, Catalog, Adventure, Ach, Logic, Combat, Simulation, Progression, AutomationEngine };"
         : "globalThis.api = { Data, GameLimits };", context);
     return {
         ...context.api, context, storage, messages,
@@ -79,7 +79,7 @@ test("old v1-v4 saves retain original balances and collections while expansion f
         await h.Data.ready;
         assert.equal(h.Data.getRecovery(), null);
         assert.equal(h.Data.key, SAVE_KEY);
-        assert.equal(h.Data.version, 4);
+        assert.equal(h.Data.version, 5);
         assert.equal(h.Data.state.gold, legacy.gold);
         assert.equal(h.Data.state.gem, legacy.gem);
         assert.equal(h.Data.state.token, legacy.token);
@@ -88,7 +88,7 @@ test("old v1-v4 saves retain original balances and collections while expansion f
         assert.deepEqual(plain(h.Data.state.achReady), legacy.achReady);
         assert.deepEqual(plain(h.Data.state.stat.c), legacy.stat.c);
         assert.deepEqual(plain(h.Data.state.comp.na), legacy.comp.na);
-        assert.deepEqual(plain(h.Data.state.player), version === 4 ? legacy.player : { level: 1, xp: 0 });
+        assert.deepEqual(plain(h.Data.state.player), version >= 4 ? legacy.player : { level: 1, xp: 0 });
         assert.equal(Object.keys(h.Data.state.items).length, 24);
         assert.ok(Object.values(h.Data.state.items).every(level => level === 0));
         assert.deepEqual(plain(h.Data.state.extraRelics), Array(16).fill(false));

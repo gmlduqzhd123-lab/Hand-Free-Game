@@ -120,8 +120,10 @@ def main():
                 detail = function()
                 results.append({"name": name, "passed": True, "detail": detail})
             except Exception as error:
-                results.append({"name": name, "passed": False, "error": str(error)})
-                print(f"FAILED {name}: {error}", file=sys.stderr, flush=True)
+                import traceback
+                msg = str(error) or " | ".join(line.strip() for line in traceback.format_exc().strip().splitlines()[-3:])
+                results.append({"name": name, "passed": False, "error": msg})
+                print(f"FAILED {name}: {msg}", file=sys.stderr, flush=True)
 
         progress_js = """({gold:Data.state.gold, gem:Data.state.gem, token:Data.state.token,
             kills:Data.state.kills, min:Data.state.min, clicks:Data.state.totalClicks,
@@ -740,7 +742,8 @@ def main():
                     return JSON.stringify(state);
                 }""")
             with fresh(raw=legacy) as (context, page, _):
-                assert page.evaluate("Data.state.version") == 4
+                assert page.evaluate("Data.state.version") == 5
+                assert page.evaluate("Boolean(localStorage.getItem('ys_bugfree_final_v2:v4-backup'))")
                 assert page.evaluate("Data.state.gold") == 777
                 assert page.evaluate("Data.state.stat.a") == {"l": 1, "p": 10, "c": 321}
                 assert page.evaluate("Data.state.mob.hp") == 40
@@ -799,7 +802,7 @@ def main():
                 assert page.locator("#lv-comp2").inner_text() == "4"
                 assert page.evaluate("Data.save()") is True
                 persisted = page.evaluate("JSON.parse(localStorage.getItem('ys_bugfree_final_v2'))")
-                assert persisted["version"] == 4 and persisted["gold"] == 12345
+                assert persisted["version"] == 5 and persisted["gold"] == 12345
                 return {"legacyVersion": 2, "sameStorageKey": "ys_bugfree_final_v2", "preserved": "all currencies, upgrades, companions, relics, achievements, enemy HP, skill cooldowns, sound", "automaticUpgradePreserved": {"level": 9, "power": 321}}
 
         def layouts():
@@ -1495,6 +1498,117 @@ def main():
                             images.append(str(collection))
             return {"images": images, "progressedFixture": {"level": 36, "minute": 2, "gold": 1806, "activeNightBuff": True}}
 
+        def prd_v5_features_and_pwa():
+            with fresh() as (context, page, _):
+                page.evaluate("window.v5Clock = Date.now(); Date.now = () => v5Clock")
+                # FR01: Onboarding visible, dismissible, reopenable
+                assert page.locator("#onboarding-card").is_visible()
+                assert page.locator("#onboarding-steps-list li").count() == 4
+                page.locator("#btn-onboarding-dismiss").click()
+                assert page.locator("#onboarding-card").is_hidden()
+                page.locator('[data-target="tab-sys"]').click()
+                page.locator("#btn-reopen-onboarding").click()
+                assert page.locator("#onboarding-card").is_visible()
+
+                # FR02: Bulk purchase (1 / 10 / max) & recommendation banner
+                page.locator('[data-target="tab-stat"]').click()
+                page.evaluate("Data.state.gold = 50000; UI.renderAll()")
+                page.locator('#tab-stat [data-qty-mode="10"]').click()
+                assert page.evaluate("Data.state.preferences.purchaseQty") == "10"
+                assert "10회" in page.locator("#preview-click").inner_text()
+                page.locator("#up-click").click()
+                assert page.evaluate("Data.state.stat.c.l") == 11
+                page.locator('#tab-stat [data-qty-mode="1"]').click()
+                assert page.locator("#rec-banner-stat").inner_text().strip()
+
+                # FR03: Automation helper budget & reserve gold
+                page.locator('[data-target="tab-sys"]').click()
+                page.evaluate("Data.state.gold = 3000; Data.state.lastActiveAt = v5Clock; UI.renderAll()")
+                page.locator("#auto-budget-limit").fill("1000")
+                page.locator("#auto-reserve-gold").fill("2500")
+                page.locator("#btn-auto-apply").click()
+                page.locator("#auto-strategy-select").select_option("auto-priority")
+                page.locator("#auto-enabled-toggle").check()
+                page.evaluate("v5Clock += 1500; AutomationEngine.tick(v5Clock); UI.renderAll()")
+                assert page.evaluate("Data.state.gold >= 2500"), "automation violated reserveGold"
+                assert page.evaluate("Data.state.automation.budgetSpent <= 1000"), "automation exceeded budgetLimit"
+
+                # FR04: Manual boss entry mode, boss prep dialog, and failure diagnosis
+                page.locator("#boss-entry-mode-select").select_option("prepare")
+                page.evaluate("""() => {
+                    Data.state.kills = 100;
+                    Simulation.spawn(Data.state, true, v5Clock);
+                    Logic.sync(v5Clock); UI.renderAll();
+                }""")
+                assert page.evaluate("Simulation.isBossPending(Data.state)") is True
+                assert page.locator("#boss-pending-banner").is_visible()
+                page.locator("#btn-open-boss-prep").click()
+                page.locator("#boss-prep-dialog").wait_for(state="visible")
+                assert "보스 정보" in page.locator("#boss-prep-content").inner_text()
+                page.locator("#btn-boss-prep-start").click()
+                assert page.evaluate("Simulation.isBossActive(Data.state)") is True
+                page.evaluate("Data.state.mob.hp = 1e9; Data.state.mob.maxHp = 1e9; Data.state.lastActiveAt = v5Clock; v5Clock += 31000; Logic.catchUp(v5Clock); UI.renderAll()")
+                assert page.evaluate("Data.state.mob.boss") is False, "boss should have timed out"
+                assert page.locator("#boss-failure-card").is_visible(), "boss failure card should be visible"
+
+                # FR05 & FR06 & FR07: Map, Companions + Synergies, Cosmetics
+                page.locator("#btn-open-map").click()
+                page.locator("#map-dialog").wait_for(state="visible")
+                assert page.locator("#map-locations-list button").count() == 5
+                page.locator("#btn-map-close").click()
+
+                page.locator("#btn-open-cosmetics").click()
+                page.locator("#cosmetics-dialog").wait_for(state="visible")
+                assert page.locator(".cosmetic-slot-group").count() == 5
+                page.locator("#btn-cosmetics-close").click()
+
+                page.locator('[data-target="tab-comp"]').click()
+                assert page.locator("#extra-companions-list .up-card").count() == 4
+                assert "체육 요정" in page.locator("#companion-loadout-summary").inner_text()
+
+                # FR08: Achievements progress bar, goal pinning, claimAll
+                page.evaluate("Data.state.kills = 15; Ach.check(); UI.renderAll()")
+                page.locator('[data-target="tab-ach"]').click()
+                assert page.locator("#btn-claim-all-ach").is_enabled()
+                gems_before = page.evaluate("Data.state.gem")
+                page.locator("#btn-claim-all-ach").click()
+                assert page.evaluate("Data.state.gem") > gems_before
+
+                # FR09: Away report dialog & 1200x1200 PNG record card
+                page.evaluate("""() => {
+                    Data.state.lastActiveAt = v5Clock;
+                    v5Clock += 120000;
+                    Progression.settleAway(v5Clock, {offline: true});
+                    UI.renderAll();
+                }""")
+                page.locator("#btn-open-reports").click()
+                page.locator("#report-dialog").wait_for(state="visible")
+                assert "자리비움" in page.locator("#report-dialog-content").inner_text() or "정산" in page.locator("#report-dialog-content").inner_text()
+                with page.expect_download() as dl_info:
+                    page.locator("#btn-report-download-card").click()
+                assert dl_info.value.suggested_filename == "hand-free-adventure-card.png"
+                page.locator("#btn-report-close").click()
+
+                # FR10: Prestige comparison preview dialog
+                page.evaluate("Data.state.min = 3; UI.renderAll()")
+                page.locator('[data-target="tab-sys"]').click()
+                page.locator("#btn-prestige-preview").click()
+                page.locator("#prestige-dialog").wait_for(state="visible")
+                assert "유지" in page.locator("#prestige-dialog-content").inner_text()
+                assert "초기화" in page.locator("#prestige-dialog-content").inner_text()
+                page.locator("#btn-prestige-close").click()
+
+                # Stage 3 PWA: Service worker registration & cache verification
+                sw_info = page.evaluate("""async () => {
+                    if (!('serviceWorker' in navigator) || !('caches' in window)) return {supported: false};
+                    const reg = await navigator.serviceWorker.ready;
+                    const keys = await caches.keys();
+                    return {supported: true, active: Boolean(reg && reg.active), keys};
+                }""")
+                assert sw_info["supported"] and sw_info["active"]
+                assert "hand-free-game-v2" in sw_info["keys"]
+                return {"v5FeaturesVerified": True, "recordCardDownload": dl_info.value.suggested_filename, "swCache": sw_info["keys"]}
+
         for name, function in [
             ("expanded collections show 24 items, 20 relics, 30 achievements and stable purchase DOM", collections_and_stable_shop),
             ("mouse Enter and Space attack holds repeat and release stops without duplicate clicks", attack_hold_and_release),
@@ -1538,6 +1652,7 @@ def main():
             ("teacher and all enemy variants remain visible throughout mobile animations", teacher_enemy_layouts),
             ("reduced-motion preference stops visual motion while attacks work", reduced_motion_preference),
             ("damage, HP, stage, and skill summaries follow game progress", glance_summaries_follow_progress),
+            ("PRD v5 features onboarding bulk purchase automation boss map cosmetics reports prestige and PWA cache", prd_v5_features_and_pwa),
             ("initial and progressed screenshots for visual review", screenshots),
         ]:
             check(name, function)
@@ -1549,6 +1664,8 @@ def main():
         with open(args.output, "w", encoding="utf-8") as output:
             output.write(serialized + "\n")
     print(serialized)
+    if args.check and not results:
+        return 1
     return 0 if report["passed"] == report["total"] else 1
 
 

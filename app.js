@@ -347,6 +347,7 @@ const VFX = {
 
 const UI = {
     achievementSignature: '',
+    achRows: new Map(),
     lastSkillSecond: -1,
 
     renderSound() {
@@ -369,7 +370,8 @@ const UI = {
         $('player-xp-fill').style.width = (maximumLevel ? 100 : state.player.xp / requiredXP * 100) + '%';
         $('player-xp-track').setAttribute('aria-valuemax', String(maximumLevel ? 1 : requiredXP));
         $('player-xp-track').setAttribute('aria-valuenow', String(maximumLevel ? 1 : state.player.xp));
-        const xpRate = (GameLimits.XP_PER_SECOND * (1 + Catalog.bonuses(state).xpPct)).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
+        const advXpBonus = typeof Adventure !== 'undefined' ? Adventure.bonuses(state).xpBonus : 0;
+        const xpRate = (GameLimits.XP_PER_SECOND * (1 + Catalog.bonuses(state).xpPct + advXpBonus)).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
         $('player-xp-track').setAttribute('aria-valuetext', maximumLevel ? '최고 레벨 달성' :
             '레벨 ' + state.player.level + ', 경험치 ' + state.player.xp + ' / ' + requiredXP + '. 초당 ' + xpRate + ' 경험치 자동 획득.');
         document.querySelector('.growth-caption').textContent = '경험치 +' + xpRate + ' / 초 ✦ 선생님은 오늘도 성장 중!';
@@ -387,6 +389,7 @@ const UI = {
         const relicComplete = Catalog.relicCount(state) === Catalog.relics.length;
         $('btn-gacha').disabled = !Data.canWrite || state.gem < 10 || relicComplete;
         $('btn-gacha').setAttribute('aria-label', relicComplete ? '유물 수집 완료' : '보석 10개로 유물 뽑기. 누르고 있으면 연속 구매.');
+        const qtyMode = (state.preferences && state.preferences.purchaseQty) || '1';
         const descriptors = [
             ['click', state.stat.c, Logic.getC_Dmg(), '분필 마법'],
             ['auto', state.stat.a, Logic.getA_Dmg(), '자동 공격'],
@@ -398,10 +401,16 @@ const UI = {
             $('lv-' + name).textContent = fNum(entry.l);
             $('val-' + name).textContent = fNum(value);
             const maximum = Logic.isUpgradeMaxed(name);
-            $('cost-' + name).textContent = maximum ? 'MAX' : fNum(entry.c);
+            const quote = typeof Progression !== 'undefined' ? Progression.quotePurchase(state, name, qtyMode) : null;
+            const costText = maximum
+                ? 'MAX'
+                : quote && quote.canBuy && qtyMode !== '1'
+                    ? `${quote.actualCount}회 · ${fNum(quote.totalCost)}`
+                    : fNum(entry.c);
+            $('cost-' + name).textContent = costText;
             $('up-' + name).disabled = !Data.canWrite || maximum || state.gold < entry.c;
             const description = name === 'crit' && maximum ? '최대 확률 50퍼센트 달성' :
-                maximum ? '최대 강화 단계 달성' : '강화 비용 골드 ' + fNum(entry.c);
+                maximum ? '최대 강화 단계 달성' : '강화 비용 골드 ' + costText;
             $('up-' + name).setAttribute('aria-label', title + '. ' + description);
         }
         const milestone = level => {
@@ -413,10 +422,13 @@ const UI = {
         $('mile-click').style.width = milestone(state.stat.c.l) + '%';
         $('mile-auto').style.width = milestone(state.stat.a.l) + '%';
         CatalogUI.render();
+        if (typeof ExperienceUI !== 'undefined') ExperienceUI.renderResExtras();
     },
 
     renderHp(now = Date.now()) {
         const state = Data.state;
+        const bossPending = typeof Adventure !== 'undefined' && Adventure.isBossPending(state);
+        const bossActive = typeof Adventure !== 'undefined' ? Adventure.isBossActive(state) : state.mob.boss;
         const maxHP = Math.max(1, Logic.curMaxHp);
         const ratio = Math.max(0, Math.min(1, state.mob.hp / maxHP));
         $('mob-hp').style.width = ratio * 100 + '%';
@@ -425,8 +437,9 @@ const UI = {
         if ($('hp-text')) $('hp-text').textContent = fNum(state.mob.hp) + ' / ' + fNum(maxHP);
         if ($('work-stage')) $('work-stage').textContent = fNum(state.kills + 1);
         if ($('work-status')) $('work-status').textContent = !GameApp.playing || !Data.canWrite || GameApp.recoveryPending || document.hidden
-            ? '일시 정지' : state.mob.boss ? '보스 전투 중' : '자동 전투 중';
-        if ($('next-boss')) $('next-boss').textContent = state.mob.boss ? '보스를 물리쳐 보석을 모으세요'
+            ? '일시 정지' : bossPending ? '보스 준비 대기' : state.mob.boss ? '보스 전투 중' : '자동 전투 중';
+        if ($('next-boss')) $('next-boss').textContent = bossPending ? '보스 도전 준비 완료'
+            : state.mob.boss ? '보스를 물리쳐 보석을 모으세요'
             : state.kills >= GameLimits.MAX_COUNTER ? '최고 모험 단계' : (100 - state.kills % 100) + '마리 뒤 보스 등장';
         $('battle-view').classList.toggle('boss-mode', state.mob.boss);
         $('monster').classList.toggle('boss', state.mob.boss);
@@ -439,10 +452,10 @@ const UI = {
         $('mob-name').textContent = names[index];
         $('battle-view').setAttribute('aria-label', names[index] + ' 공격. 남은 체력 ' + Math.round(ratio * 100) + '퍼센트.');
         const timer = $('boss-timer-wrap');
-        timer.hidden = !state.mob.boss;
-        timer.style.display = state.mob.boss ? 'block' : 'none';
+        timer.hidden = !bossActive;
+        timer.style.display = bossActive ? 'block' : 'none';
         if ($('boss-seconds')) $('boss-seconds').textContent = '';
-        if (state.mob.boss) {
+        if (bossActive) {
             const maximum = Simulation.bossDuration(state) / 1000;
             const seconds = Math.max(0, (state.mob.deadline - now) / 1000);
             const percentage = Math.max(0, Math.min(100, seconds / maximum * 100));
@@ -453,42 +466,119 @@ const UI = {
             timer.setAttribute('aria-valuemax', String(maximum));
             timer.setAttribute('aria-valuetext', '보스 제한 시간 ' + Math.ceil(seconds) + '초 남음');
         }
+        if (typeof ExperienceUI !== 'undefined') ExperienceUI.renderHpExtras(now);
     },
 
     renderAch() {
         const state = Data.state;
-        const signature = Ach.list.map(a => Number(Ach.isClaimed(a.id, state))).join('') + ':' +
-            Ach.list.map(a => Number(Ach.isReady(a.id, state))).join('') + ':' + Data.canWrite;
+        const tracked = Array.isArray(state.trackedGoals) ? state.trackedGoals.join(',') : '';
+        const signature = Ach.list.map(a => {
+            const p = Ach.getProgress(a.id, state);
+            return `${Number(p.claimed)}:${Number(p.ready)}:${p.current}`;
+        }).join('|') + '#' + tracked + '#' + Data.canWrite;
         if (signature === this.achievementSignature) return;
         this.achievementSignature = signature;
+
         const list = $('ach-list');
-        list.replaceChildren();
-        for (const achievement of Ach.list) {
-            const done = Ach.isClaimed(achievement.id, state);
-            const ready = Ach.isReady(achievement.id, state);
-            const row = document.createElement('div');
-            row.className = 'achieve-item' + (done ? ' done' : '');
-            const information = document.createElement('div');
-            information.className = 'ach-info';
-            const title = document.createElement('div');
-            title.className = 'ach-title';
-            title.textContent = achievement.title;
-            const description = document.createElement('div');
-            description.className = 'ach-desc';
-            description.textContent = achievement.desc;
-            information.append(title, description);
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'btn-claim';
-            button.dataset.achievement = String(achievement.id);
-            button.disabled = done || !ready || !Data.canWrite;
-            button.textContent = done ? '완료' : '보석 +' + achievement.rwd;
-            button.setAttribute('aria-label', achievement.title +
-                (done ? ' 수령 완료' : ' 보상 보석 ' + achievement.rwd + '개 수령'));
-            button.addEventListener('click', () => Ach.claim(achievement.id));
-            row.append(information, button);
-            list.appendChild(row);
+        if (this.achRows.size !== Ach.list.length || !list.children.length) {
+            this.achRows.clear();
+            list.replaceChildren();
+            for (const achievement of Ach.list) {
+                const row = document.createElement('div');
+                row.className = 'achieve-item';
+                row.id = 'ach-item-' + achievement.id;
+                const information = document.createElement('div');
+                information.className = 'ach-info';
+
+                const topRow = document.createElement('div');
+                topRow.className = 'ach-top-row';
+                const title = document.createElement('div');
+                title.className = 'ach-title';
+                title.textContent = achievement.title;
+
+                const pinLabel = document.createElement('label');
+                pinLabel.className = 'ach-pin-toggle';
+                const pinInput = document.createElement('input');
+                pinInput.type = 'checkbox';
+                pinInput.className = 'ach-pin-input';
+                pinInput.dataset.achId = String(achievement.id);
+                pinInput.setAttribute('aria-label', achievement.title + ' 목표 고정');
+                pinInput.addEventListener('change', () => {
+                    if (typeof Progression !== 'undefined') {
+                        Progression.toggleTrackedGoal(achievement.id);
+                    }
+                });
+                const pinSpan = document.createElement('span');
+                pinSpan.textContent = '고정';
+                pinLabel.append(pinInput, pinSpan);
+                topRow.append(title, pinLabel);
+
+                const description = document.createElement('div');
+                description.className = 'ach-desc';
+                description.textContent = achievement.desc;
+
+                const progressRow = document.createElement('div');
+                progressRow.className = 'ach-progress-row';
+                const progressBar = document.createElement('div');
+                progressBar.className = 'ach-progress-bar';
+                progressBar.setAttribute('aria-hidden', 'true');
+                const progressFill = document.createElement('div');
+                progressFill.className = 'ach-progress-fill';
+                progressBar.appendChild(progressFill);
+                const progressText = document.createElement('span');
+                progressText.className = 'ach-progress-text';
+                progressText.id = 'ach-prog-' + achievement.id;
+                progressRow.append(progressBar, progressText);
+
+                information.append(topRow, description, progressRow);
+
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn-claim';
+                button.dataset.achievement = String(achievement.id);
+                button.addEventListener('click', () => Ach.claim(achievement.id));
+                row.append(information, button);
+                list.appendChild(row);
+                this.achRows.set(achievement.id, { row, progressFill, progressText, pinInput, button });
+            }
         }
+
+        let claimableCount = 0;
+        let claimableGems = 0;
+        const trackedList = Array.isArray(state.trackedGoals) ? state.trackedGoals : [];
+        for (const achievement of Ach.list) {
+            const refs = this.achRows.get(achievement.id);
+            if (!refs) continue;
+            const prog = Ach.getProgress(achievement.id, state);
+            const done = prog.claimed;
+            const ready = prog.ready;
+            if (prog.canClaim) {
+                claimableCount++;
+                claimableGems += achievement.rwd;
+            }
+            refs.row.className = 'achieve-item' + (done ? ' done' : ready ? ' ready' : '');
+            refs.row.dataset.current = String(prog.current);
+            refs.row.dataset.target = String(prog.target);
+            refs.row.dataset.percent = String(prog.percent);
+            refs.progressFill.style.width = prog.percent + '%';
+            refs.progressText.textContent = `${fNum(prog.current)} / ${fNum(prog.target)} (${prog.percent}%)`;
+            const pinned = trackedList.includes(achievement.id);
+            refs.pinInput.checked = pinned;
+            refs.pinInput.disabled = !Data.canWrite || done || (!pinned && trackedList.length >= GameLimits.MAX_TRACKED_GOALS);
+            refs.button.disabled = done || !ready || !Data.canWrite;
+            refs.button.textContent = done ? '완료' : '보석 +' + achievement.rwd;
+            refs.button.setAttribute('aria-label', achievement.title +
+                (done ? ' 수령 완료' : ' 보상 보석 ' + achievement.rwd + '개 수령'));
+        }
+
+        const claimAllBtn = $('btn-claim-all-ach');
+        if (claimAllBtn) {
+            claimAllBtn.disabled = !Data.canWrite || claimableCount === 0;
+            claimAllBtn.textContent = claimableCount > 0
+                ? `모두 받기 (${claimableCount}개 · 💎 +${fNum(claimableGems)})`
+                : '모두 받기';
+        }
+        if (typeof ExperienceUI !== 'undefined') ExperienceUI.renderGoalBanner();
     },
 
     renderSkills(now = Date.now()) {
@@ -497,8 +587,11 @@ const UI = {
         for (const [name, number, title] of [
             ['rush', 1, '반짝 분필'], ['night', 2, '칭찬의 마법']
         ]) {
-            const duration = Combat.sk[name].cd * 1000;
-            const remaining = Math.max(0, Data.state.skill[name] + duration - now);
+            const readyAt = typeof Adventure !== 'undefined'
+                ? Adventure.getSkillReadyAt(Data.state, name)
+                : Data.state.skill[name] + Combat.sk[name].cd * 1000;
+            const duration = Math.max(1, readyAt > Data.state.skill[name] ? readyAt - Data.state.skill[name] : Combat.sk[name].cd * 1000);
+            const remaining = Math.max(0, readyAt - now);
             const active = Math.max(0, Data.state.buff[name + 'Until'] - now);
             const status = !Data.canWrite ? '일시 정지' : active > 0 ? '작동 중 · ' + Math.ceil(active / 1000) + '초'
                 : remaining > 0 ? Math.ceil(remaining / 1000) + '초 대기' : '사용 가능';
@@ -528,6 +621,7 @@ const UI = {
         }
         Ach.check();
         this.renderAch();
+        if (typeof ExperienceUI !== 'undefined') ExperienceUI.renderOnboarding();
         Sys.sfx.btn();
     },
 
@@ -547,6 +641,7 @@ const UI = {
         this.lastSkillSecond = -1;
         this.renderSkills();
         Data.state.relic.forEach((owned, index) => $('relic-' + index).classList.toggle('unlocked', owned));
+        if (typeof ExperienceUI !== 'undefined') ExperienceUI.renderAll();
     }
 };
 
@@ -564,6 +659,7 @@ const RepeatInput = {
         if (element.id === 'battle-view') return { element, kind: 'attack' };
         if (element.id === 'btn-gacha') return { element, kind: 'gacha' };
         if (element.dataset.repeatAction === 'item') return { element, kind: 'item', id: element.dataset.itemId };
+        if (element.dataset.repeatAction === 'companion') return { element, kind: 'companion', id: element.dataset.companionId };
         if (element.id.startsWith('up-')) return { element, kind: 'upgrade', id: element.id.slice(3) };
         if (element.dataset.repeatAction === 'upgrade') return { element, kind: 'upgrade', id: element.dataset.upgrade };
         return null;
@@ -576,6 +672,15 @@ const RepeatInput = {
             !document.querySelector('dialog[open]'));
     },
 
+    isSinglePurchaseMode(action) {
+        if (!action || action.kind === 'attack' || action.kind === 'gacha') return true;
+        if (typeof Data !== 'undefined' && Data.state && Data.state.preferences &&
+            Data.state.preferences.purchaseQty && Data.state.preferences.purchaseQty !== '1') {
+            return false;
+        }
+        return true;
+    },
+
     perform(action) {
         if (!this.valid(action)) return false;
         if (action.kind === 'attack') {
@@ -584,6 +689,7 @@ const RepeatInput = {
         }
         if (action.kind === 'upgrade') return Logic.upgrade(action.id);
         if (action.kind === 'item') return Logic.buyItem(action.id);
+        if (action.kind === 'companion') return typeof Logic.upgradeExtraCompanion === 'function' ? Logic.upgradeExtraCompanion(action.id) : false;
         return Logic.pullGacha();
     },
 
@@ -591,7 +697,7 @@ const RepeatInput = {
         this.stop();
         if (!this.valid(action)) return;
         const session = { ...action, ...input, performed: false };
-        if (input.source === 'touch') {
+        if (input.source === 'touch' || input.source === 'pointer') {
             const rect = session.element.getBoundingClientRect();
             session.viewportTop = rect.top;
             session.viewportBottom = rect.bottom;
@@ -604,7 +710,9 @@ const RepeatInput = {
             session.performed = true;
             if (!this.perform(session)) { this.stop(); return; }
         }
-        if (this.active === session) this.timer = setTimeout(() => this.tick(session), this.delay);
+        if (this.active === session && this.isSinglePurchaseMode(session)) {
+            this.timer = setTimeout(() => this.tick(session), this.delay);
+        }
     },
 
     tick(session) {
@@ -717,6 +825,13 @@ const RepeatInput = {
                 if (Math.abs(rect.top - session.viewportTop) <= 0.5 &&
                     Math.abs(rect.bottom - session.viewportBottom) <= 0.5) return;
             }
+            if (session && session.source === 'pointer' && window.scrollX === session.startScrollX) {
+                const rect = session.element.getBoundingClientRect();
+                if ((rect.left <= session.x && session.x <= rect.right &&
+                    rect.top <= session.y && session.y <= rect.bottom) ||
+                    (Math.abs(rect.top - session.viewportTop) <= 48 &&
+                    rect.bottom > 0 && rect.top < window.innerHeight)) return;
+            }
             // Focus scrolling can finish after keydown. Keep its visible target
             // repeating; wheel, scroll keys and pointer input stop navigation.
             if (session && session.source === 'keyboard' && document.activeElement === session.element) {
@@ -759,14 +874,20 @@ const GameApp = {
         if (!Data.canWrite || this.recoveryPending || this.playing) return;
         const now = Date.now();
         Logic.rebaseClock(now);
-        if (Data.state.hasStarted) {
+        if (Data.state.hasStarted && typeof Progression !== 'undefined') {
+            Progression.settleAway(now, { offline: true, silent: true, render: false });
+        } else if (Data.state.hasStarted) {
             const from = Math.min(now, Data.state.lastActiveAt);
             Logic.reconcile(from);
             Logic.advance(from, now, { offline: true, silent: true, render: false });
+            Data.state.lastActiveAt = now;
+            Logic.reconcile(now);
+            Data.save();
+        } else {
+            Data.state.lastActiveAt = now;
+            Logic.reconcile(now);
+            Data.save();
         }
-        Data.state.lastActiveAt = now;
-        Logic.reconcile(now);
-        Data.save();
         this.renderIntro(true);
     },
 
@@ -794,6 +915,10 @@ const GameApp = {
         UI.renderAll();
         window.scrollTo(0, 0);
         $('battle-view').focus({ preventScroll: true });
+        if (typeof Progression !== 'undefined' && typeof ExperienceUI !== 'undefined') {
+            const pendingReport = Progression.consumePendingAutoReport();
+            if (pendingReport) ExperienceUI.openReportDialog(pendingReport, true);
+        }
         void Sys.init().then(() => Sys.sfx.ach());
         return true;
     },
@@ -865,6 +990,17 @@ const GameApp = {
         if (!this.playing || !this.booted || !Data.canWrite || this.recoveryPending) return;
         const now = Date.now();
         Logic.rebaseClock(now);
+        if (typeof Progression !== 'undefined') {
+            const settled = Progression.settleAway(now, { offline, render: false });
+            this.lastVisual = performance.now();
+            this.lastRender = 0;
+            UI.renderAll();
+            if (settled.shouldAutoShow && typeof ExperienceUI !== 'undefined') {
+                const pendingReport = Progression.consumePendingAutoReport();
+                if (pendingReport) ExperienceUI.openReportDialog(pendingReport, true);
+            }
+            return;
+        }
         const from = Math.min(now, Data.state.lastActiveAt);
         Logic.reconcile(from);
         Logic.advance(from, now, { offline, render: false });
@@ -897,6 +1033,9 @@ const GameApp = {
             const clock = Date.now();
             Logic.rebaseClock(clock);
             Logic.advance(Math.min(clock, Data.state.lastActiveAt), clock, { render: false });
+            if (typeof AutomationEngine !== 'undefined') {
+                AutomationEngine.tick(clock);
+            }
             VFX.update(elapsed);
             if (now - this.lastRender >= 100) {
                 UI.renderRes();
@@ -914,6 +1053,7 @@ const GameApp = {
         await Data.ready;
         VFX.init();
         CatalogUI.init();
+        if (typeof ExperienceUI !== 'undefined') ExperienceUI.init();
         this.booted = true;
         this.recoveryPending = Boolean(Data.getRecovery());
         this.installEvents();

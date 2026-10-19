@@ -54,10 +54,10 @@ function harness({ raw, storageFailure, sharedStorage } = {}) {
         VFX: { add() {}, cvs: { width: 480, height: 200 } },
         $: () => ({ style: {}, classList: { add() {}, remove() {} } })
     });
-    for (const file of ["save.js", "catalog.js", "game.js"]) {
+    for (const file of ["save.js", "catalog.js", "adventure.js", "game.js", "progression.js", "automation.js"]) {
         vm.runInContext(fs.readFileSync(path.join(ROOT, file), "utf8"), context, { filename: file });
     }
-    vm.runInContext("globalThis.api = { Data, GameLimits, Ach, Logic, Combat, Simulation };", context);
+    vm.runInContext("globalThis.api = { Data, GameLimits, Catalog, Adventure, Ach, Logic, Combat, Simulation, Progression, AutomationEngine };", context);
     return {
         ...context.api, context, storage, messages,
         setFailure(value) { failure = value; },
@@ -538,7 +538,7 @@ test("successful late upgrades clamp growing costs and stop charging at maximum"
 test("opening a fresh game starts automatic combat and gains XP without an input", () => {
     const h = harness();
     const state = h.Data.createDefault();
-    assert.equal(state.version, 4);
+    assert.equal(state.version, 5);
     assert.deepEqual(plain(state.player), { level: 1, xp: 0 });
     assert.equal(state.xpRemainder, 0);
     assert.deepEqual(plain(state.stat.a), { l: 1, p: 10, c: 100 });
@@ -574,7 +574,7 @@ test("version 3 progress migrates in place and receives a free starter only when
     await h.Data.ready;
     assert.equal(h.Data.key, SAVE_KEY);
     assert.equal(h.Data.recoveryRaw, null);
-    assert.equal(h.Data.state.version, 4);
+    assert.equal(h.Data.state.version, 5);
     assert.deepEqual(plain(h.Data.state.player), { level: 1, xp: 0 });
     assert.deepEqual(plain(h.Data.state.stat.a), { l: 1, p: 10, c: 321 });
     assert.equal(h.Data.state.gold, 777);
@@ -585,7 +585,7 @@ test("version 3 progress migrates in place and receives a free starter only when
     assert.equal(h.Data.state.totalClicks, 0);
     assert.equal(h.storage.get(SAVE_KEY), raw, "migration overwrote bytes before a committed save");
     assert.equal(h.Data.save(), true);
-    assert.equal(JSON.parse(h.storage.get(SAVE_KEY)).version, 4);
+    assert.equal(JSON.parse(h.storage.get(SAVE_KEY)).version, 5);
     for (const upgrade of [{ l: 4, p: 99, c: 999 }, { l: 1, p: 0, c: 100 }, { l: 0, p: 5, c: 100 }]) {
         legacy.stat.a = upgrade;
         assert.deepEqual(plain(initial.Data.normalize(legacy).stat.a), upgrade);

@@ -32,10 +32,10 @@ function harness() {
         UI: new Proxy({}, { get: () => () => {} }),
         VFX: { add() {}, cvs: { width: 480, height: 320 } }
     });
-    for (const file of ['save.js', 'catalog.js', 'game.js']) {
+    for (const file of ['save.js', 'catalog.js', 'adventure.js', 'game.js', 'progression.js', 'automation.js']) {
         vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), context, { filename: file });
     }
-    vm.runInContext('globalThis.api = { Data, GameLimits, Catalog, Ach, Logic, Combat, Simulation };', context);
+    vm.runInContext('globalThis.api = { Data, GameLimits, Catalog, Adventure, Ach, Logic, Combat, Simulation, Progression, AutomationEngine };', context);
     return {
         ...context.api, context, storage,
         setNow(value) { now = value; },

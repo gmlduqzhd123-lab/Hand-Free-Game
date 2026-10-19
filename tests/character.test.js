@@ -57,7 +57,7 @@ test("legacy v1-v4 saves without character keep their progress and default to fe
             delete old.xpRemainder;
         }
         const restored = h.Data.normalize(old, { strict: true });
-        assert.equal(restored.version, 4);
+        assert.equal(restored.version, 5);
         assert.equal(restored.character, "female");
         assert.equal(restored.hasStarted, true);
         assert.equal(restored.gold, 777);
@@ -79,7 +79,7 @@ test("both appearance choices survive save, reload, export JSON, and import", as
         const reloaded = harness(backup);
         await reloaded.Data.ready;
         assert.equal(reloaded.Data.key, SAVE_KEY);
-        assert.equal(reloaded.Data.version, 4);
+        assert.equal(reloaded.Data.version, 5);
         assert.equal(reloaded.Data.state.character, character);
         assert.equal(reloaded.Data.state.hasStarted, true);
         assert.deepEqual(gameplay(reloaded.Data.state), gameplay(h.Data.state));

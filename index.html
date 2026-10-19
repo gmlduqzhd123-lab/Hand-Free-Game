@@ -117,10 +117,11 @@
         <section class="play-column" aria-label="자동 전투">
             <main id="battle-view" role="button" tabindex="0" aria-label="적 공격" aria-describedby="battle-instructions" aria-keyshortcuts="Enter Space">
                 <canvas id="fx-canvas" aria-hidden="true"></canvas>
-                <div class="battle-top"><span class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-note"/></svg> 교실 모험 <span id="work-stage">1</span></span><span class="live-status" id="work-status">자동 전투 중</span></div>
+                <div class="battle-top"><span class="eyebrow"><svg class="icon" aria-hidden="true"><use href="#i-note"/></svg> <span id="current-location-label">교실</span> 모험 <span id="work-stage">1</span></span><span class="live-status" id="work-status">자동 전투 중</span></div>
                 <div class="battle-body">
                     <span class="scene-caption" aria-hidden="true">햇살 가득한 교실</span>
-                    <div id="teacher-hero" aria-hidden="true"><span class="hero-aura"></span><img id="teacher-sprite" src="assets/teacher.svg" alt="" draggable="false"><span class="hero-badge">선생님 <strong id="hero-level">Lv.1</strong></span><span class="hero-celebration">✦ 잘했어요! ✦</span></div>
+                    <span id="classroom-decor-layer" class="classroom-decor-layer" aria-hidden="true"></span>
+                    <div id="teacher-hero" aria-hidden="true"><span class="hero-aura"></span><img id="teacher-sprite" src="assets/teacher.svg" alt="" draggable="false"><span id="hero-cosmetic-layer" class="hero-cosmetic-layer" aria-hidden="true"></span><span class="hero-badge">선생님 <strong id="hero-level">Lv.1</strong></span><span class="hero-celebration">✦ 잘했어요! ✦</span></div>
                     <div id="attack-projectile" aria-hidden="true"><span>✦</span></div>
                     <div id="monster" data-variant="0" aria-hidden="true"></div>
                     <div class="battle-copy"><span class="battle-label">오늘의 작은 몬스터</span><h2 id="mob-name">졸음 슬라임</h2><div class="hp-label"><span>HP</span><strong id="hp-text">100 / 100</strong></div><div class="hp-track" id="mob-hp-track" role="progressbar" aria-label="적 체력" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div class="hp-fill" id="mob-hp"></div></div><span id="next-boss">100마리 물리치면 보스 등장</span></div>
@@ -136,7 +137,33 @@
                 <button class="skill-btn" id="btn-s1" onclick="Combat.useSkill('rush')" type="button"><span class="skill-icon"><svg class="icon" aria-hidden="true"><use href="#i-bolt"/></svg></span><span class="skill-copy"><span class="s-title">반짝 분필</span><span class="s-sub">5초간 빠른 자동 추가 공격</span><span class="skill-state" id="skill-status-rush">사용 가능</span></span><div class="skill-cd-mask" id="cd-rush" aria-hidden="true"></div></button>
                 <button class="skill-btn" id="btn-s2" onclick="Combat.useSkill('night')" type="button"><span class="skill-icon"><svg class="icon" aria-hidden="true"><use href="#i-spark"/></svg></span><span class="skill-copy"><span class="s-title">칭찬의 마법</span><span class="s-sub">10초간 치명타 확률 100%</span><span class="skill-state" id="skill-status-night">사용 가능</span></span><div class="skill-cd-mask" id="cd-night" aria-hidden="true"></div></button>
             </div>
-            <div class="goal-card"><div><span class="eyebrow">오늘의 작은 여정</span><strong>16:40, 교실에 평화를!</strong></div><span id="day-progress-text">0 / 40분</span><div class="goal-track"><div id="day-progress-fill"></div></div></div>
+            <div class="adventure-quickbar" role="group" aria-label="모험 도구">
+                <button type="button" id="btn-open-map" class="quick-tool-btn">🗺️ 학교 지도</button>
+                <button type="button" id="btn-open-cosmetics" class="quick-tool-btn">🎨 꾸미기</button>
+                <button type="button" id="btn-open-reports" class="quick-tool-btn">📋 복귀 보고서</button>
+                <button type="button" id="btn-open-boss-prep" class="quick-tool-btn">⚔️ 보스 준비</button>
+            </div>
+            <section id="boss-pending-banner" class="boss-pending-banner" hidden aria-live="polite">
+                <div class="boss-pending-info">
+                    <strong>⚔️ 보스 도전 대기 중</strong>
+                    <p id="boss-pending-summary">보스 진입 준비가 완료되었습니다. 원할 때 도전을 시작하세요.</p>
+                </div>
+                <div class="boss-pending-actions">
+                    <button type="button" id="btn-start-boss-inline" class="up-btn">도전 시작</button>
+                </div>
+            </section>
+            <section id="boss-failure-card" class="boss-failure-card" hidden aria-live="polite">
+                <strong>💡 직전 보스 도전 분석</strong>
+                <p id="boss-failure-body"></p>
+            </section>
+            <section id="onboarding-card" class="onboarding-card" aria-label="첫 모험 안내">
+                <div class="onboarding-head">
+                    <strong>🌱 첫 모험 4단계 안내</strong>
+                    <button type="button" id="btn-onboarding-dismiss" class="onboarding-dismiss-btn">건너뛰기</button>
+                </div>
+                <ul id="onboarding-steps-list" class="onboarding-steps-list"></ul>
+            </section>
+            <div class="goal-card"><div><span class="eyebrow">오늘의 작은 여정</span><strong>16:40, 교실에 평화를!</strong></div><span id="day-progress-text">0 / 40분</span><div class="goal-track"><div id="day-progress-fill"></div></div><div id="tracked-goals-list" class="tracked-goals-list"></div></div>
         </section>
 
         <footer id="panel-area">
@@ -151,11 +178,25 @@
 
             <div id="tab-stat" class="tab-view active" role="tabpanel" aria-labelledby="tab-button-stat" tabindex="0">
                 <div class="panel-heading"><div><span class="eyebrow">조금씩 더 강해지는 마법</span><h2>선생님 성장 노트</h2></div><span class="panel-caption"><svg class="icon" aria-hidden="true"><use href="#i-coin"/></svg> 골드로 강화</span></div>
+                <div class="purchase-toolbar">
+                    <div class="toolbar-group" role="group" aria-label="구매 수량 선택">
+                        <span class="toolbar-label">구매 수량</span>
+                        <button type="button" class="mode-chip active" data-qty-mode="1" aria-pressed="true">1회</button>
+                        <button type="button" class="mode-chip" data-qty-mode="10" aria-pressed="false">10회</button>
+                        <button type="button" class="mode-chip" data-qty-mode="max" aria-pressed="false">최대</button>
+                    </div>
+                    <div class="toolbar-group" role="group" aria-label="추천 기준 선택">
+                        <span class="toolbar-label">추천 기준</span>
+                        <button type="button" class="mode-chip active" data-play-style="idle" aria-pressed="true">방치 중심</button>
+                        <button type="button" class="mode-chip" data-play-style="active" aria-pressed="false">직접 공격</button>
+                    </div>
+                </div>
+                <p id="rec-banner-stat" class="rec-banner" role="status" aria-live="polite"></p>
                 <p class="repeat-purchase-note">강화 버튼을 길게 누르면 골드가 있는 동안 연속 강화해요.</p>
                 <div class="upgrade-list">
-                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-cursor"/></svg></span><div class="up-info"><div class="up-title">분필 마법 <span class="upgrade-level">Lv.<span id="lv-click">1</span></span></div><div class="up-stat">공격력 <strong id="val-click">10</strong><span class="up-desc">클릭할 때 더 강하게</span></div></div><button class="up-btn" id="up-click" type="button" aria-label="분필 마법 강화" aria-describedby="cost-click"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-click">50</span></span></button><div class="milestone-bar" id="mile-click"></div></div>
-                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></span><div class="up-info"><div class="up-title">자동 공격 <span class="upgrade-level">Lv.<span id="lv-auto">1</span></span></div><div class="up-stat">초당 <strong id="val-auto">10</strong><span class="up-desc">아무 조작 없이 꾸준히</span></div></div><button class="up-btn" id="up-auto" type="button" aria-label="자동 공격 강화" aria-describedby="cost-auto"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-auto">100</span></span></button><div class="milestone-bar" id="mile-auto"></div></div>
-                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-spark"/></svg></span><div class="up-info"><div class="up-title">치명타 <span class="upgrade-level">Lv.<span id="lv-crit">0</span></span></div><div class="up-stat">확률 <strong><span id="val-crit">0</span>%</strong><span class="up-desc">한 번에 3배 공격</span></div></div><button class="up-btn" id="up-crit" type="button" aria-label="치명타 강화" aria-describedby="cost-crit"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-crit">300</span></span></button></div>
+                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-cursor"/></svg></span><div class="up-info"><div class="up-title">분필 마법 <span class="upgrade-level">Lv.<span id="lv-click">1</span></span></div><div class="up-stat">공격력 <strong id="val-click">10</strong><span class="up-desc">클릭할 때 더 강하게</span></div><div class="up-preview-line" id="preview-click"></div></div><button class="up-btn" id="up-click" type="button" aria-label="분필 마법 강화" aria-describedby="cost-click"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-click">50</span></span></button><div class="milestone-bar" id="mile-click"></div></div>
+                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></span><div class="up-info"><div class="up-title">자동 공격 <span class="upgrade-level">Lv.<span id="lv-auto">1</span></span></div><div class="up-stat">초당 <strong id="val-auto">10</strong><span class="up-desc">아무 조작 없이 꾸준히</span></div><div class="up-preview-line" id="preview-auto"></div></div><button class="up-btn" id="up-auto" type="button" aria-label="자동 공격 강화" aria-describedby="cost-auto"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-auto">100</span></span></button><div class="milestone-bar" id="mile-auto"></div></div>
+                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-spark"/></svg></span><div class="up-info"><div class="up-title">치명타 <span class="upgrade-level">Lv.<span id="lv-crit">0</span></span></div><div class="up-stat">확률 <strong><span id="val-crit">0</span>%</strong><span class="up-desc">한 번에 3배 공격</span></div><div class="up-preview-line" id="preview-crit"></div></div><button class="up-btn" id="up-crit" type="button" aria-label="치명타 강화" aria-describedby="cost-crit"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-crit">300</span></span></button></div>
                 </div>
                 <details class="help-details"><summary>성장과 강화는 어떻게 다른가요?</summary><p>선생님의 기본 경험치는 매초 5이며, 아이템과 유물로 더 빠르게 성장해요. 레벨마다 전체 공격력이 5% 증가하고, 골드 강화는 선택한 능력을 올립니다. 분필 마법·자동 공격 Lv 10·25·50·100마다 공격력이 2배가 됩니다. 강화 치명타 확률은 최대 50%이며 아이템·유물 보너스는 별도로 더해집니다. 치명타는 추가 공격에 적용됩니다.</p></details>
                 <p class="quiet-note"><span class="status-dot" aria-hidden="true"></span>자리를 비워도 최대 24시간 성장합니다.</p>
@@ -163,16 +204,31 @@
 
             <div id="tab-comp" class="tab-view" role="tabpanel" aria-labelledby="tab-button-comp" tabindex="0" hidden>
                 <div class="panel-heading"><div><span class="eyebrow">작은 교실의 든든한 친구</span><h2>모험 동료</h2></div></div>
-                <div class="upgrade-list">
-                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></span><div class="up-info"><div class="up-title">체육 요정 <span class="upgrade-level">Lv.<span id="lv-comp1">0</span></span></div><div class="up-stat">자동 공격 <strong>+<span id="val-comp1">0</span></strong><span class="up-desc">방치하는 동안 더 강하게</span></div></div><button class="up-btn" id="up-comp1" type="button" aria-label="체육 요정 강화" aria-describedby="cost-comp1"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-comp1">2,000</span></span></button></div>
-                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg></span><div class="up-info"><div class="up-title">응원 요정 <span class="upgrade-level">Lv.<span id="lv-comp2">0</span></span></div><div class="up-stat">추가 공격 <strong>+<span id="val-comp2">0</span>%</strong><span class="up-desc">클릭의 힘을 높여 줍니다</span></div></div><button class="up-btn" id="up-comp2" type="button" aria-label="응원 요정 강화" aria-describedby="cost-comp2"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-comp2">5,000</span></span></button></div>
+                <div class="companion-loadout-box">
+                    <p id="companion-loadout-summary" class="companion-summary-line">현재 동행(최대 2명): 체육 요정 · 응원 요정</p>
+                    <p id="companion-synergy-summary" class="companion-synergy-line">조합 효과: 발동 중인 지정 조합 효과가 없습니다.</p>
+                    <div id="companion-presets-row" class="companion-presets-row" role="group" aria-label="동료 조합 프리셋"></div>
                 </div>
+                <div class="upgrade-list">
+                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-auto"/></svg></span><div class="up-info"><div class="up-title">체육 요정 <span class="upgrade-level">Lv.<span id="lv-comp1">0</span></span></div><div class="up-stat">자동 공격 <strong>+<span id="val-comp1">0</span></strong><span class="up-desc">방치하는 동안 더 강하게</span></div><div class="up-preview-line" id="preview-comp1"></div></div><div class="comp-card-actions"><button class="comp-equip-btn" id="btn-equip-na" type="button" aria-pressed="true">동행 중</button><button class="up-btn" id="up-comp1" type="button" aria-label="체육 요정 강화" aria-describedby="cost-comp1"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-comp1">2,000</span></span></button></div></div>
+                    <div class="up-card"><span class="upgrade-icon"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg></span><div class="up-info"><div class="up-title">응원 요정 <span class="upgrade-level">Lv.<span id="lv-comp2">0</span></span></div><div class="up-stat">추가 공격 <strong>+<span id="val-comp2">0</span>%</strong><span class="up-desc">클릭의 힘을 높여 줍니다</span></div><div class="up-preview-line" id="preview-comp2"></div></div><div class="comp-card-actions"><button class="comp-equip-btn" id="btn-equip-yu" type="button" aria-pressed="true">동행 중</button><button class="up-btn" id="up-comp2" type="button" aria-label="응원 요정 강화" aria-describedby="cost-comp2"><svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span><span class="sr-only">골드 </span><span id="cost-comp2">5,000</span></span></button></div></div>
+                </div>
+                <div id="extra-companions-list" class="upgrade-list extra-companions-list"></div>
                 <p class="quiet-note">동료의 능력은 플레이어 레벨과 연수학점 배율도 받습니다.</p>
             </div>
 
             <div id="tab-shop" class="tab-view" role="tabpanel" aria-labelledby="tab-button-shop" tabindex="0" hidden>
                 <div class="panel-heading"><div><span class="eyebrow">가방 속에 담는 스물네 가지 마법</span><h2>교실 아이템 상점</h2></div></div>
                 <p id="item-summary" class="catalog-summary" role="status" aria-live="polite">아이템 0 / 24종 · 총 강화 0회</p>
+                <div class="purchase-toolbar">
+                    <div class="toolbar-group" role="group" aria-label="상점 구매 수량 선택">
+                        <span class="toolbar-label">구매 수량</span>
+                        <button type="button" class="mode-chip active" data-qty-mode="1" aria-pressed="true">1회</button>
+                        <button type="button" class="mode-chip" data-qty-mode="10" aria-pressed="false">10회</button>
+                        <button type="button" class="mode-chip" data-qty-mode="max" aria-pressed="false">최대</button>
+                    </div>
+                </div>
+                <p id="rec-banner-shop" class="rec-banner" role="status" aria-live="polite"></p>
                 <p class="repeat-purchase-note">골드로 강화해요. 버튼을 길게 누르면 연속 구매하며, 각 아이템은 Lv.25까지 성장해요.</p>
                 <div id="item-category-filters" class="item-category-filters" role="group" aria-label="아이템 종류 선택">
                     <button type="button" data-item-category="all" aria-pressed="true">전체</button><button type="button" data-item-category="click" aria-pressed="false">분필 마법</button><button type="button" data-item-category="auto" aria-pressed="false">자동 공격</button><button type="button" data-item-category="xp" aria-pressed="false">경험치</button><button type="button" data-item-category="gold" aria-pressed="false">골드</button><button type="button" data-item-category="crit" aria-pressed="false">치명타</button><button type="button" data-item-category="boss" aria-pressed="false">보스 도전</button>
@@ -192,13 +248,42 @@
                 </div>
             </div>
 
-            <div id="tab-ach" class="tab-view" role="tabpanel" aria-labelledby="tab-button-ach" tabindex="0" hidden><div class="panel-heading"><div><span class="eyebrow">차곡차곡 쌓이는 반짝임</span><h2>모험 업적</h2></div></div><div id="ach-list"></div></div>
+            <div id="tab-ach" class="tab-view" role="tabpanel" aria-labelledby="tab-button-ach" tabindex="0" hidden><div class="panel-heading"><div><span class="eyebrow">차곡차곡 쌓이는 반짝임</span><h2>모험 업적</h2></div><button type="button" id="btn-claim-all-ach" class="up-btn claim-all-btn" disabled>모두 받기</button></div><div id="ach-list"></div></div>
 
             <div id="tab-sys" class="tab-view" role="tabpanel" aria-labelledby="tab-button-sys" tabindex="0" hidden>
                 <div class="panel-heading"><div><span class="eyebrow">내일도 이어지는 우리 교실</span><h2>게임 설정</h2></div></div>
                 <p id="save-status" class="save-note" role="status" aria-live="polite">저장 상태를 확인하고 있습니다.</p>
-                <div class="setting-panel prestige-panel"><div class="setting-header">다음 모험 떠나기</div><p>현재 모험과 골드를 정산하고 연수학점을 받습니다. 선생님 레벨·경험치·보석·상점 아이템·유물·업적은 유지됩니다.</p><div class="prestige-preview"><span>받을 연수학점</span><strong>+<span id="preview-token">0</span></strong></div><button class="btn-half" type="button" onclick="Logic.prestige()">정산하고 다음 모험 <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button></div>
-                <div class="setting-panel"><div class="setting-header">게임 백업</div><p>현재 진행을 코드나 파일로 보관하고 다른 기기에서도 이어하세요.</p><div class="backup-actions"><button class="btn-half secondary" type="button" onclick="Sys.export()">백업 내보내기</button><button class="btn-half secondary" type="button" onclick="Sys.import()">백업 가져오기</button></div></div>
+                <div class="setting-panel prestige-panel"><div class="setting-header">다음 모험 떠나기</div><p>현재 모험과 골드를 정산하고 연수학점을 받습니다. 선생님 레벨·경험치·보석·상점 아이템·유물·업적은 유지됩니다.</p><div class="prestige-preview"><span>받을 연수학점</span><strong>+<span id="preview-token">0</span></strong></div><div class="backup-actions"><button class="btn-half" type="button" onclick="Logic.prestige()">정산하고 다음 모험 <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button><button class="btn-half secondary" id="btn-prestige-preview" type="button">다음 모험 비교 미리보기</button></div></div>
+                <div class="setting-panel" id="automation-panel">
+                    <div class="setting-header">보스 진입 및 자동 강화·스킬 도우미</div>
+                    <p>화면이 켜져 있는 동안 설정한 예산과 보존 골드 안에서만 자동으로 강화하고 스킬을 사용합니다.</p>
+                    <div class="auto-form-grid">
+                        <label class="auto-field-row" for="boss-entry-mode-select"><span>보스 진입 방식</span><select id="boss-entry-mode-select"><option value="auto">100마리마다 즉시 진입</option><option value="prepare">보스 준비 대기 후 직접 시작</option></select></label>
+                        <label class="auto-field-row" for="auto-enabled-toggle"><span>자동 도우미 실행</span><input type="checkbox" id="auto-enabled-toggle"></label>
+                        <label class="auto-field-row" for="auto-strategy-select"><span>자동 강화 전략</span><select id="auto-strategy-select"><option value="hold">보류 (구매 안 함)</option><option value="auto-priority">방치 공격 우선</option><option value="balanced">균형 강화</option></select></label>
+                        <label class="auto-field-row" for="auto-skill-rush"><span>반짝 분필 자동 발동</span><select id="auto-skill-rush"><option value="manual">수동 사용</option><option value="ready">준비 즉시 사용</option><option value="boss">보스 전투 시 사용</option></select></label>
+                        <label class="auto-field-row" for="auto-skill-night"><span>칭찬의 마법 자동 발동</span><select id="auto-skill-night"><option value="manual">수동 사용</option><option value="ready">반짝 분필 활성 시 사용</option><option value="boss">보스 반짝 분필 시 사용</option></select></label>
+                        <label class="auto-field-row" for="auto-budget-limit"><span>예산 한도 (골드)</span><input type="number" id="auto-budget-limit" min="0" step="100" value="5000"></label>
+                        <label class="auto-field-row" for="auto-reserve-gold"><span>최소 보존 골드</span><input type="number" id="auto-reserve-gold" min="0" step="100" value="0"></label>
+                        <label class="auto-field-row" for="auto-allow-pending"><span>보스 준비 대기 중 자동 구매 허용</span><input type="checkbox" id="auto-allow-pending"></label>
+                    </div>
+                    <fieldset class="auto-targets-fieldset">
+                        <legend>자동 강화 대상</legend>
+                        <label><input type="checkbox" class="auto-target-cb" value="auto" checked>자동 공격</label>
+                        <label><input type="checkbox" class="auto-target-cb" value="click">분필 마법</label>
+                        <label><input type="checkbox" class="auto-target-cb" value="crit">치명타</label>
+                        <label><input type="checkbox" class="auto-target-cb" value="comp1" checked>체육 요정</label>
+                        <label><input type="checkbox" class="auto-target-cb" value="comp2">응원 요정</label>
+                        <label><input type="checkbox" class="auto-target-cb" value="extraComp">신규 동료</label>
+                        <label><input type="checkbox" class="auto-target-cb" value="items" checked>상점 아이템</label>
+                    </fieldset>
+                    <p class="auto-budget-summary">사용 예산: <strong id="auto-budget-spent">0</strong> 골드 · 남은 예산: <strong id="auto-budget-remaining">5,000</strong> 골드 · 상태: <span id="auto-status-text">꺼짐</span></p>
+                    <div class="backup-actions">
+                        <button type="button" id="btn-auto-apply" class="btn-half">예산·대상 적용</button>
+                        <button type="button" id="btn-auto-restart-budget" class="btn-half secondary">예산 다시 시작</button>
+                    </div>
+                </div>
+                <div class="setting-panel"><div class="setting-header">게임 백업 및 안내</div><p>현재 진행을 코드나 파일로 보관하고 다른 기기에서도 이어하세요.</p><div class="backup-actions"><button class="btn-half secondary" type="button" onclick="Sys.export()">백업 내보내기</button><button class="btn-half secondary" type="button" onclick="Sys.import()">백업 가져오기</button><button class="btn-half secondary" id="btn-reopen-onboarding" type="button">첫 모험 안내 다시 보기</button></div></div>
                 <details class="help-details"><summary>자동 성장과 자리비움 안내</summary><p>기본 경험치는 초당 5이며 아이템·유물 효과로 증가합니다. 새 게임은 약 4초 뒤 첫 레벨업을 합니다. 자리비움은 최대 24시간까지 경험치를 그대로, 자동 전투 골드를 70% 정산합니다. 보스 제한 시간과 스킬 재사용 시간은 실제 시간으로 흐릅니다. 한 탭에서만 플레이하며 적 체력과 진행도 저장됩니다.</p></details>
                 <div class="reset-row"><span>새 게임을 시작하려면</span><button class="reset-button" type="button" onclick="Sys.hardReset()">진행 초기화</button></div>
                 <p class="app-credit">© 2026 엽쌤. All rights reserved. · <a href="https://gmlduqzhd123-lab.github.io/YScode/">엽쌤의 다른 앱 보기 →</a></p>
@@ -250,11 +335,66 @@
     </div>
 </dialog>
 
-<script src="save.js?v=touch-hold-4" defer></script>
-<script src="catalog.js?v=touch-hold-4" defer></script>
-<script src="game.js?v=touch-hold-4" defer></script>
-<script src="catalog-ui.js?v=touch-hold-4" defer></script>
-<script src="app.js?v=touch-hold-4" defer></script>
+<dialog id="boss-prep-dialog" aria-labelledby="boss-prep-title">
+    <h2 id="boss-prep-title">⚔️ 보스 도전 준비 및 예상 분석</h2>
+    <div id="boss-prep-content" class="dialog-body-box"></div>
+    <div class="dialog-actions">
+        <button id="btn-boss-prep-start" type="button" class="dialog-button">보스 도전 시작</button>
+        <button id="btn-boss-prep-upgrade" type="button" class="dialog-button secondary">더 강화하기</button>
+        <button id="btn-boss-prep-close" type="button" class="dialog-button secondary">닫기</button>
+    </div>
+</dialog>
+
+<dialog id="map-dialog" aria-labelledby="map-dialog-title">
+    <h2 id="map-dialog-title">🗺️ 학교 모험 지도와 이야기</h2>
+    <p>보스를 물리치며 학교 곳곳의 평화를 되찾으세요. 한 번 해금한 장소의 배경과 이야기는 다음 모험에서도 볼 수 있습니다.</p>
+    <div id="map-locations-list" class="map-locations-list"></div>
+    <div id="map-location-detail" class="dialog-body-box"></div>
+    <div class="dialog-actions">
+        <button id="btn-map-close" type="button" class="dialog-button secondary">닫기</button>
+    </div>
+</dialog>
+
+<dialog id="cosmetics-dialog" aria-labelledby="cosmetics-dialog-title">
+    <h2 id="cosmetics-dialog-title">🎨 선생님과 교실 꾸미기</h2>
+    <div id="cosmetics-preview-box" class="dialog-body-box"></div>
+    <div id="cosmetics-slots-container" class="cosmetics-slots-container"></div>
+    <div class="dialog-actions">
+        <button id="btn-cosmetics-apply" type="button" class="dialog-button">선택 외형 적용</button>
+        <button id="btn-cosmetics-reset" type="button" class="dialog-button secondary">기본 모습으로</button>
+        <button id="btn-cosmetics-close" type="button" class="dialog-button secondary">닫기</button>
+    </div>
+</dialog>
+
+<dialog id="report-dialog" aria-labelledby="report-dialog-title">
+    <h2 id="report-dialog-title">📋 자리비움 성장 보고서</h2>
+    <div id="report-history-list" class="report-history-list"></div>
+    <div id="report-dialog-content" class="dialog-body-box"></div>
+    <div class="dialog-actions">
+        <button id="btn-report-goto-rec" type="button" class="dialog-button">추천 강화로 이동</button>
+        <button id="btn-report-download-card" type="button" class="dialog-button secondary">기록 카드 PNG 저장</button>
+        <button id="btn-report-close" type="button" class="dialog-button secondary">닫기</button>
+    </div>
+</dialog>
+
+<dialog id="prestige-dialog" aria-labelledby="prestige-dialog-title">
+    <h2 id="prestige-dialog-title">🎓 다음 모험 정산 비교 미리보기</h2>
+    <div id="prestige-dialog-content" class="dialog-body-box"></div>
+    <div class="dialog-actions">
+        <button id="btn-prestige-confirm" type="button" class="dialog-button">확인하고 다음 모험 시작</button>
+        <button id="btn-prestige-close" type="button" class="dialog-button secondary">취소</button>
+    </div>
+</dialog>
+
+<script src="save.js?v=prd-v5" defer></script>
+<script src="catalog.js?v=prd-v5" defer></script>
+<script src="adventure.js?v=prd-v5" defer></script>
+<script src="game.js?v=prd-v5" defer></script>
+<script src="progression.js?v=prd-v5" defer></script>
+<script src="automation.js?v=prd-v5" defer></script>
+<script src="catalog-ui.js?v=prd-v5" defer></script>
+<script src="experience-ui.js?v=prd-v5" defer></script>
+<script src="app.js?v=prd-v5" defer></script>
 <script>
 // 📱 오프라인 열기 (서비스 워커)
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {

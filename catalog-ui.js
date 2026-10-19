@@ -84,16 +84,38 @@ const CatalogUI = {
     render() {
         if (!this.initialized) return;
         const state = Data.state;
+        if (typeof Progression !== 'undefined' && typeof Progression.getPurchaseStateSignature === 'function') {
+            const sig = Progression.getPurchaseStateSignature(state);
+            if (this.lastSignature === sig) return;
+            this.lastSignature = sig;
+        }
+        const qtyMode = (state.preferences && state.preferences.purchaseQty) || '1';
         for (const item of Catalog.items) {
             const row = this.itemRows.get(item.id);
             const level = Catalog.itemLevel(item, state);
             const maximum = level >= item.maxLevel;
-            const cost = maximum ? 'MAX' : fNum(Catalog.itemCost(item, state));
-            row.level.textContent = 'Lv.' + level + ' / ' + item.maxLevel;
-            row.cost.textContent = maximum ? cost : cost + ' 골드';
-            row.button.disabled = !Data.canWrite || !GameApp.playing || maximum || !Catalog.canBuyItem(item, state);
+            const quote = typeof Progression !== 'undefined'
+                ? Progression.quotePurchase(state, 'item:' + item.id, qtyMode)
+                : null;
+            const nextSingleCost = maximum ? 'MAX' : fNum(Catalog.itemCost(item, state));
+            const displayCost = maximum
+                ? 'MAX'
+                : quote && quote.canBuy
+                    ? (qtyMode === '1' ? fNum(quote.totalCost) + ' 골드' : quote.actualCount + '회 · ' + fNum(quote.totalCost) + ' 골드')
+                    : nextSingleCost + ' 골드';
+            if (quote && !maximum) {
+                const detail = quote.canBuy
+                    ? (qtyMode === '1' ? quote.summary : `${quote.summary} · ${quote.actualCount}회`)
+                    : `${quote.summary} · ${fNum(quote.shortfall)} 부족`;
+                row.level.textContent = `Lv.${level} / ${item.maxLevel} · ${detail}`;
+            } else {
+                row.level.textContent = 'Lv.' + level + ' / ' + item.maxLevel;
+            }
+            row.cost.textContent = displayCost;
+            const canBuy = quote ? quote.canBuy : Catalog.canBuyItem(item, state);
+            row.button.disabled = !Data.canWrite || !GameApp.playing || maximum || !canBuy;
             row.button.setAttribute('aria-label', item.name + ', 현재 레벨 ' + level + '. ' +
-                (maximum ? '최대 레벨 달성' : '강화 비용 ' + cost + ' 골드. 길게 누르면 연속 구매'));
+                (maximum ? '최대 레벨 달성' : (quote ? quote.summary + '. ' : '') + '강화 비용 ' + displayCost + (qtyMode === '1' ? '. 길게 누르면 연속 구매' : '')));
         }
         for (const [index, row] of this.relicRows) row.classList.toggle('unlocked', Catalog.ownedRelic(index, state));
         const itemSummary = document.getElementById('item-summary');
