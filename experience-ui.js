@@ -602,7 +602,13 @@ const ExperienceUI = {
 
         document.querySelectorAll('.auto-target-cb').forEach(cb => {
             if (document.activeElement !== cb) {
-                cb.checked = auto.targets.includes(cb.value);
+                if (cb.value === 'extraComp') {
+                    cb.checked = GameLimits.EXTRA_COMPANION_IDS.some(id => auto.targets.includes('comp:' + id));
+                } else if (cb.value === 'items') {
+                    cb.checked = GameLimits.ITEM_IDS.some(id => auto.targets.includes('item:' + id));
+                } else {
+                    cb.checked = auto.targets.includes(cb.value);
+                }
             }
         });
 

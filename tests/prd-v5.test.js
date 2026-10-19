@@ -235,6 +235,25 @@ test('FR03: AutomationEngine enforces budgetLimit, reserveGold, foreground/dialo
     assert.equal(h.AutomationEngine.restartBudget(2500), true);
     assert.equal(h.Data.state.automation.budgetSpent, 0);
     assert.equal(h.Data.state.automation.budgetLimit, 2500);
+
+    // Group targets 'extraComp' and 'items' expand to individual comp:* and item:* entries
+    assert.equal(h.AutomationEngine.updateSettings({ targets: ['extraComp', 'items'] }), true);
+    assert.ok(h.Data.state.automation.targets.includes('comp:library'), 'extraComp expands to comp:library');
+    assert.ok(h.Data.state.automation.targets.includes('item:chalk-spark'), 'items expands to item:chalk-spark');
+
+    // Balanced strategy skips crit-capped items
+    h.Data.state.stat.crit = { l: 50, p: 50, c: 300 };
+    h.Data.state.gold = 50000;
+    h.Data.state.automation.strategy = 'balanced';
+    h.Data.state.automation.targets = ['crit', 'click'];
+    h.Data.state.automation.budgetLimit = 50000;
+    const clickBeforeBalanced = h.Data.state.stat.c.l;
+    h.setNow(NOW + 8000);
+    const balancedTick = h.AutomationEngine.tick(NOW + 8000);
+    assert.equal(balancedTick.executed, true);
+    assert.ok(balancedTick.purchases > 0, 'balanced strategy should purchase available uncapped targets');
+    assert.equal(h.Data.state.stat.crit.l, 50, 'balanced strategy must skip crit when crit is already capped');
+    assert.ok(h.Data.state.stat.c.l > clickBeforeBalanced, 'balanced strategy should level up click instead');
 });
 
 test('FR04: Boss prepare mode holds pending state across 60s and 24h, blocks combat/clicks/skills, and records failure snapshot', async () => {

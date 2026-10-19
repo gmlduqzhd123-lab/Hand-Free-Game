@@ -1528,6 +1528,8 @@ def main():
                 page.locator("#auto-budget-limit").fill("1000")
                 page.locator("#auto-reserve-gold").fill("2500")
                 page.locator("#btn-auto-apply").click()
+                assert page.evaluate("Data.state.automation.targets.includes('item:chalk-spark')"), "items group checkbox should expand to item:* targets"
+                assert page.locator('.auto-target-cb[value="items"]').is_checked(), "items checkbox should remain checked after render"
                 page.locator("#auto-strategy-select").select_option("auto-priority")
                 page.locator("#auto-enabled-toggle").check()
                 page.evaluate("v5Clock += 1500; AutomationEngine.tick(v5Clock); UI.renderAll()")

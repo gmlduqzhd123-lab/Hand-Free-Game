@@ -78,12 +78,25 @@ const AutomationEngine = {
         return true;
     },
 
+    expandTargets(rawTargets) {
+        if (!Array.isArray(rawTargets)) return [];
+        const expanded = [];
+        for (const item of rawTargets) {
+            if (item === 'extraComp') {
+                for (const id of GameLimits.EXTRA_COMPANION_IDS) expanded.push(`comp:${id}`);
+            } else if (item === 'items') {
+                for (const id of GameLimits.ITEM_IDS) expanded.push(`item:${id}`);
+            } else if (typeof item === 'string' && AUTOMATION_TARGET_SET.has(item)) {
+                expanded.push(item);
+            }
+        }
+        return Array.from(new Set(expanded));
+    },
+
     _pickNextPurchaseTarget(candidate, now) {
         const auto = candidate.automation;
         if (!auto || auto.strategy === 'hold') return null;
-        const targets = Array.isArray(auto.targets) && auto.targets.length > 0
-            ? auto.targets.filter(t => AUTOMATION_TARGET_SET.has(t))
-            : [];
+        const targets = this.expandTargets(auto.targets);
         if (!targets.length) return null;
 
         if (auto.strategy === 'auto-priority') {
@@ -92,7 +105,7 @@ const AutomationEngine = {
             let bestOrder = Infinity;
             for (const spec of targets) {
                 const quote = Progression.quotePurchase(candidate, spec, '1', now);
-                if (!quote || !quote.canBuy || quote.actualCount < 1) continue;
+                if (!quote || !quote.canBuy || quote.actualCount < 1 || quote.isCritCapped) continue;
                 const cost = quote.totalCost;
                 if (!this._canAffordWithinBudget(candidate, cost)) continue;
                 const deltaAuto = quote.after.autoDamage - quote.before.autoDamage;
@@ -116,7 +129,7 @@ const AutomationEngine = {
                 const idx = (startCursor + offset) % len;
                 const spec = targets[idx];
                 const quote = Progression.quotePurchase(candidate, spec, '1', now);
-                if (!quote || !quote.canBuy || quote.actualCount < 1) continue;
+                if (!quote || !quote.canBuy || quote.actualCount < 1 || quote.isCritCapped) continue;
                 if (!this._canAffordWithinBudget(candidate, quote.totalCost)) continue;
                 return { spec, nextCursor: (idx + 1) % len };
             }
@@ -236,7 +249,7 @@ const AutomationEngine = {
         if (typeof patch.enabled === 'boolean') auto.enabled = patch.enabled;
         if (GameLimits.AUTOMATION_STRATEGIES.includes(patch.strategy)) auto.strategy = patch.strategy;
         if (Array.isArray(patch.targets)) {
-            auto.targets = Array.from(new Set(patch.targets.filter(t => AUTOMATION_TARGET_SET.has(t))));
+            auto.targets = this.expandTargets(patch.targets);
             if (auto.cursor >= auto.targets.length) auto.cursor = 0;
         }
         if (typeof patch.budgetLimit === 'number' && Number.isFinite(patch.budgetLimit) && patch.budgetLimit >= 0) {
