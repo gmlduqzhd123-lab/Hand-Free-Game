@@ -937,6 +937,39 @@ const GameApp = {
         $('intro-title').focus({ preventScroll: true });
     },
 
+    saveGame() {
+        if (!this.booted) return false;
+        RepeatInput.stop();
+        const saved = this.flush(true);
+        UI.renderAll();
+        this.renderIntro(false);
+        if (saved) {
+            Sys.sfx.btn();
+            Sys.toast('💾 현재 모험 진행을 안전하게 저장했습니다.');
+            return true;
+        }
+        Sys.sfx.err();
+        Sys.toast($('save-status') ? $('save-status').textContent : '진행을 저장하지 못했습니다.');
+        return false;
+    },
+
+    exitGame() {
+        if (!this.booted) return false;
+        RepeatInput.stop();
+        for (const id of ['backup-dialog', 'import-dialog', 'recovery-dialog', 'boss-prep-dialog', 'map-dialog', 'cosmetics-dialog', 'report-dialog', 'prestige-dialog']) {
+            if ($(id)) Sys.closeDialog(id);
+        }
+        const saved = this.flush(true);
+        this.goToIntro(false);
+        if ($('intro-progress')) {
+            $('intro-progress').textContent = saved
+                ? '💾 모험을 안전하게 저장하고 종료했습니다 · Lv.' + Data.state.player.level + ' · ' + fNum(Data.state.kills) + '마리 처치'
+                : '모험을 일시 정지하고 시작 화면으로 돌아왔습니다.';
+        }
+        Sys.sfx.btn();
+        return saved;
+    },
+
     status(status) {
         this.savedStatus = status;
         const wasRecovering = this.recoveryPending;
@@ -1012,18 +1045,17 @@ const GameApp = {
     },
 
     flush(force = false) {
-        if (!this.booted || !Data.canWrite || this.recoveryPending) return;
+        if (!this.booted || !Data.canWrite || this.recoveryPending) return false;
         const now = Date.now();
         Logic.rebaseClock(now);
         if (!this.playing) {
             Data.state.lastActiveAt = now;
-            Data.save();
-            return;
+            return Data.save();
         }
         if (!document.hidden || force) {
             Logic.advance(Math.min(now, Data.state.lastActiveAt), now, { render: false });
         }
-        Data.save();
+        return Data.save();
     },
 
     frame(now) {
@@ -1076,6 +1108,10 @@ const GameApp = {
         RepeatInput.init();
         $('btn-start-game').addEventListener('click', () => this.enterGame());
         $('btn-return-intro').addEventListener('click', () => this.goToIntro());
+        if ($('btn-save-game')) $('btn-save-game').addEventListener('click', () => this.saveGame());
+        if ($('btn-exit-game')) $('btn-exit-game').addEventListener('click', () => this.exitGame());
+        if ($('btn-sys-save')) $('btn-sys-save').addEventListener('click', () => this.saveGame());
+        if ($('btn-sys-exit')) $('btn-sys-exit').addEventListener('click', () => this.exitGame());
         const tabs = Array.from(document.querySelectorAll('.tab-btn'));
         for (const button of tabs) {
             button.addEventListener('click', () => UI.selectTab(button));

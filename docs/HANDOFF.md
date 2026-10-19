@@ -33,6 +33,7 @@
 4. **자동 강화 엔진 (`automation.js`)**:
    - 전면 활성 탭·열린 대화상자 없음·쓰기 권한·보스 대기 조건·1,000ms 구매 간격·예산 상한(`budgetLimit`)·최소 보유 골드(`reserveGold`) 준수 및 영구 저장 성공 시에만 반영.
 5. **UI·반응형 레이아웃·PWA 캐시 (`catalog-ui.js`, `experience-ui.js`, `app.js`, `index.html`, `presentation.css`, `sw.js`, `README.md`)**:
+   - 상단 헤더(`#header .header-actions`)와 설정 탭(`#tab-sys`)에 **게임 저장**(`#btn-save-game`, `#btn-sys-save` → `GameApp.saveGame()`) 및 **게임 종료**(`#btn-exit-game`, `#btn-sys-exit` → `GameApp.exitGame()`) 버튼 추가.
    - 24개 해상도(모바일·태블릿·데스크톱)에서 가로 넘침·컨트롤 겹침·잘림 0건, 최소 터치 영역 `44×44px`, `prefers-reduced-motion` 준수.
    - `sw.js` 캐시 버전을 `hand-free-game-v2`로 관리하고 34개 필수 프리캐시 자산 등록, 타 웹앱 캐시(`other-app-cache-v1`) 및 저장 데이터 보존, 네트워크 차단 상태(`offline`)에서 페이지 재실행 검증 완료.
 

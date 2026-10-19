@@ -55,6 +55,8 @@
     <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h1m4 0h1m4 0h1M6 13h1m4 0h1m4 0h1M7 16h10"/></symbol>
     <symbol id="i-note" viewBox="0 0 24 24"><path d="M4 3h16v12l-6 6H4zm10 18v-6h6M8 8h8m-8 4h6"/></symbol>
     <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><path d="M12 6a6 6 0 0 1 6 6"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l4 4v12H5zM8 4v6h8V4M8 20v-7h8v7"/></symbol>
+    <symbol id="i-exit" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14 5-5-5-5m5 5H9"/></symbol>
 </defs></svg>
 
 <main id="intro-screen" aria-labelledby="intro-title">
@@ -94,7 +96,9 @@
         <div class="topline">
             <div class="brand"><span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-spark"/></svg></span><div><h1>4시 40분의 용사</h1><p><span id="chosen-character-name">여교사</span>와 함께하는 작은 교실의 모험</p></div></div>
             <div class="header-actions">
+                <button id="btn-save-game" type="button" class="return-intro-button header-save-button"><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg><span>게임 저장</span></button>
                 <button id="btn-return-intro" type="button" class="return-intro-button"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>선생님 선택</span></button>
+                <button id="btn-exit-game" type="button" class="return-intro-button header-exit-button"><svg class="icon" aria-hidden="true"><use href="#i-exit"/></svg><span>게임 종료</span></button>
                 <span class="work-clock" aria-label="현재 모험 시간"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span id="clock">16:00</span><span class="clock-target">/ 16:40</span></span>
                 <button id="btn-sound" type="button" onclick="Sys.toggleSound()" aria-label="소리 끄기" aria-pressed="true" data-muted="false"><svg class="icon sound-on" aria-hidden="true"><use href="#i-volume"/></svg><svg class="icon sound-off" aria-hidden="true"><use href="#i-muted"/></svg><span id="sound-label" class="sr-only">효과음 켜짐</span></button>
             </div>
@@ -283,7 +287,7 @@
                         <button type="button" id="btn-auto-restart-budget" class="btn-half secondary">예산 다시 시작</button>
                     </div>
                 </div>
-                <div class="setting-panel"><div class="setting-header">게임 백업 및 안내</div><p>현재 진행을 코드나 파일로 보관하고 다른 기기에서도 이어하세요.</p><div class="backup-actions"><button class="btn-half secondary" type="button" onclick="Sys.export()">백업 내보내기</button><button class="btn-half secondary" type="button" onclick="Sys.import()">백업 가져오기</button><button class="btn-half secondary" id="btn-reopen-onboarding" type="button">첫 모험 안내 다시 보기</button></div></div>
+                <div class="setting-panel"><div class="setting-header">게임 저장 · 백업 및 안내</div><p>현재 진행을 즉시 저장하거나 코드·파일로 보관하고 다른 기기에서도 이어하세요.</p><div class="backup-actions"><button class="btn-half" id="btn-sys-save" type="button"><svg class="icon" aria-hidden="true"><use href="#i-save"/></svg> 지금 저장하기</button><button class="btn-half secondary" id="btn-sys-exit" type="button"><svg class="icon" aria-hidden="true"><use href="#i-exit"/></svg> 저장하고 게임 종료</button><button class="btn-half secondary" type="button" onclick="Sys.export()">백업 내보내기</button><button class="btn-half secondary" type="button" onclick="Sys.import()">백업 가져오기</button><button class="btn-half secondary" id="btn-reopen-onboarding" type="button">첫 모험 안내 다시 보기</button></div></div>
                 <details class="help-details"><summary>자동 성장과 자리비움 안내</summary><p>기본 경험치는 초당 5이며 아이템·유물 효과로 증가합니다. 새 게임은 약 4초 뒤 첫 레벨업을 합니다. 자리비움은 최대 24시간까지 경험치를 그대로, 자동 전투 골드를 70% 정산합니다. 보스 제한 시간과 스킬 재사용 시간은 실제 시간으로 흐릅니다. 한 탭에서만 플레이하며 적 체력과 진행도 저장됩니다.</p></details>
                 <div class="reset-row"><span>새 게임을 시작하려면</span><button class="reset-button" type="button" onclick="Sys.hardReset()">진행 초기화</button></div>
                 <p class="app-credit">© 2026 엽쌤. All rights reserved. · <a href="https://gmlduqzhd123-lab.github.io/YScode/">엽쌤의 다른 앱 보기 →</a></p>

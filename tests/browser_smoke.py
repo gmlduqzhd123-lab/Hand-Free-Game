@@ -881,7 +881,8 @@ def main():
                     assert xp["y"] >= header["y"] and xp["y"] + xp["height"] <= header["y"] + header["height"], f"XP display escapes its header at {width}x{height}"
                     glance = {selector: visible_box(selector) for selector in ["#hud-gold", "#hud-gem", "#hud-token",
                         "#hud-auto", "#hud-click", "#mob-name", "#mob-hp-track", "#hp-text", "#work-stage",
-                        "#btn-s1", "#btn-s2", "#tab-nav", "#up-click", "#up-auto", "#up-crit", "#btn-return-intro"]}
+                        "#btn-s1", "#btn-s2", "#tab-nav", "#up-click", "#up-auto", "#up-crit", "#btn-save-game", "#btn-return-intro", "#btn-exit-game"]}
+                    assert glance["#btn-save-game"]["height"] >= 44 and glance["#btn-exit-game"]["height"] >= 44
                     for tab_button in page.locator(".tab-btn").all():
                         box = tab_button.bounding_box()
                         assert box and box["width"] >= 44 and box["height"] >= 44, f"tab touch target is too small at {width}x{height}: {box}"
@@ -1597,6 +1598,20 @@ def main():
                 assert "유지" in page.locator("#prestige-dialog-content").inner_text()
                 assert "초기화" in page.locator("#prestige-dialog-content").inner_text()
                 page.locator("#btn-prestige-close").click()
+
+                # Header Save & Exit buttons (#btn-save-game, #btn-exit-game)
+                rev_before = page.evaluate("Data.state.revision")
+                page.locator("#btn-save-game").click()
+                assert page.evaluate("Data.state.revision") > rev_before
+                assert "저장" in page.locator("#toast").inner_text()
+                rev_after_save = page.evaluate("Data.state.revision")
+                page.locator("#btn-exit-game").click()
+                assert page.evaluate("GameApp.playing") is False
+                assert page.locator("#intro-screen").is_visible()
+                assert page.locator("#game-app").is_hidden()
+                assert page.evaluate("Data.state.revision") > rev_after_save
+                assert "저장하고 종료" in page.locator("#intro-progress").inner_text()
+                start_game(page)
 
                 # Stage 3 PWA: Service worker registration, cache update preservation, and first offline execution
                 sw_info = page.evaluate("""async () => {

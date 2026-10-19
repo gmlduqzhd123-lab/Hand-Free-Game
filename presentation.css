@@ -333,7 +333,15 @@ dialog { width:min(480px, calc(100% - 24px)); max-height:calc(100dvh - 24px); ov
 .cosmetics-slot-group h3, .cosmetic-slot-group h3 { font-size:15px; margin:0 0 8px; color:#52425e; }
 .cosmetics-chip-row, .cosmetic-options-row { display:flex; flex-wrap:wrap; gap:8px; }
 
+.return-intro-button:hover { background:#635074; border-color:#b89fc2; }
+.header-save-button { border-color:#6d9a7e; background:#3b5649; color:#e4f5ea; }
+.header-save-button:hover { background:#486959; border-color:#95c4a6; }
+.header-exit-button { border-color:#9e7676; background:#593d45; color:#f5e1e4; }
+.header-exit-button:hover { background:#6d4b55; border-color:#c69898; }
+
 @media (max-width:699px) {
+    .header-actions { flex-wrap:wrap; gap:8px; justify-content:flex-start; }
+    .header-actions .work-clock { margin-left:auto; }
     .up-card { flex-wrap:wrap; }
     .comp-card-actions { width:100%; justify-content:flex-end; }
     .achieve-item { flex-wrap:wrap; }
